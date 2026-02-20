@@ -13,7 +13,7 @@ pnpm install
 ## Development
 
 ```bash
-pnpm dev
+pnpm develop
 ```
 
 Starts a local dev server at `localhost:4321` with Cloudflare platform proxy enabled.
