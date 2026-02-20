@@ -1,0 +1,235 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import PostCard from "../../components/PostCard.astro";
+import {
+  getClient,
+  GET_PUBLICATION_DRAFTS,
+  GET_MY_DRAFTS,
+} from "../../lib/hashnode";
+
+const PAGE_SIZE = 20;
+const pubAfter = Astro.url.searchParams.get("pub_after");
+const myAfter = Astro.url.searchParams.get("my_after");
+const pubPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("pub_page") || "1", 10),
+);
+const myPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("my_page") || "1", 10),
+);
+
+const env = Astro.locals.runtime.env;
+const client = getClient(env);
+
+type DraftNode = {
+  id: string;
+  title: string;
+  slug: string;
+  updatedAt: string;
+  author: { name: string; username: string };
+  tags: Array<{ id: string; name: string; slug: string }>;
+};
+
+type DraftsResult = {
+  totalDocuments: number;
+  pageInfo: { hasNextPage: boolean; endCursor: string };
+  edges: Array<{ node: DraftNode }>;
+};
+
+let pubDrafts: DraftsResult | undefined;
+let myDrafts: DraftsResult | undefined;
+let fetchError = "";
+
+try {
+  const [pubResult, myResult] = await Promise.all([
+    client.query<{ publication: { drafts: DraftsResult } }>(
+      GET_PUBLICATION_DRAFTS,
+      {
+        host: env.HASHNODE_HOST,
+        first: PAGE_SIZE,
+        after: pubAfter || undefined,
+      },
+    ),
+    client.query<{ me: { drafts: DraftsResult } }>(GET_MY_DRAFTS, {
+      first: PAGE_SIZE,
+      after: myAfter || undefined,
+    }),
+  ]);
+
+  pubDrafts = pubResult.publication?.drafts;
+  myDrafts = myResult.me?.drafts;
+} catch (e) {
+  fetchError = e instanceof Error ? e.message : "Failed to load drafts.";
+}
+
+const pubTotalPages = pubDrafts
+  ? Math.ceil(pubDrafts.totalDocuments / PAGE_SIZE)
+  : 1;
+const myTotalPages = myDrafts
+  ? Math.ceil(myDrafts.totalDocuments / PAGE_SIZE)
+  : 1;
+
+function buildPubNextUrl(newPubAfter: string, nextPubPage: number): string {
+  const params = new URLSearchParams();
+  params.set("pub_after", newPubAfter);
+  params.set("pub_page", String(nextPubPage));
+  if (myAfter) params.set("my_after", myAfter);
+  if (myPage > 1) params.set("my_page", String(myPage));
+  return `/drafts?${params.toString()}`;
+}
+
+function buildMyNextUrl(newMyAfter: string, nextMyPage: number): string {
+  const params = new URLSearchParams();
+  if (pubAfter) params.set("pub_after", pubAfter);
+  if (pubPage > 1) params.set("pub_page", String(pubPage));
+  params.set("my_after", newMyAfter);
+  params.set("my_page", String(nextMyPage));
+  return `/drafts?${params.toString()}`;
+}
+---
+
+<Layout title="Drafts">
+  <h1 class="mb-8 text-2xl font-bold">Drafts</h1>
+
+  {
+    fetchError && (
+      <div class="mb-6 border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        {fetchError}
+      </div>
+    )
+  }
+
+  <!-- Publication Drafts -->
+  <section class="mb-10">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold">Publication Drafts</h2>
+      {
+        pubDrafts && (
+          <span class="text-base text-gray-500">
+            {pubDrafts.totalDocuments} total
+          </span>
+        )
+      }
+    </div>
+
+    {
+      pubDrafts && pubDrafts.edges.length > 0 ? (
+        <div class="flex flex-col gap-3">
+          {pubDrafts.edges.map(({ node: draft }) => (
+            <PostCard
+              type="draft"
+              id={draft.id}
+              title={draft.title || "Untitled Draft"}
+              author={draft.author?.name ?? "Unknown"}
+              username={draft.author?.username}
+              date={new Date(draft.updatedAt)}
+              tags={draft.tags}
+            />
+          ))}
+        </div>
+      ) : (
+        <p class="text-base text-gray-500">No drafts found.</p>
+      )
+    }
+
+    {
+      (pubAfter || pubDrafts?.pageInfo.hasNextPage) && (
+        <nav class="mt-4 flex items-center justify-between border-t border-gray-200 pt-3">
+          <div class="w-28">
+            {pubAfter && (
+              <a
+                href="/drafts"
+                class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+              >
+                &larr; First
+              </a>
+            )}
+          </div>
+          <span class="text-base text-gray-500">
+            Page {pubPage} of {pubTotalPages}
+          </span>
+          <div class="w-28 text-right">
+            {pubDrafts?.pageInfo.hasNextPage && (
+              <a
+                href={buildPubNextUrl(
+                  pubDrafts.pageInfo.endCursor,
+                  pubPage + 1,
+                )}
+                data-astro-prefetch="viewport"
+                class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Next &rarr;
+              </a>
+            )}
+          </div>
+        </nav>
+      )
+    }
+  </section>
+
+  <!-- My Drafts -->
+  <section>
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold">My Drafts</h2>
+      {
+        myDrafts && (
+          <span class="text-base text-gray-500">
+            {myDrafts.totalDocuments} total
+          </span>
+        )
+      }
+    </div>
+
+    {
+      myDrafts && myDrafts.edges.length > 0 ? (
+        <div class="flex flex-col gap-3">
+          {myDrafts.edges.map(({ node: draft }) => (
+            <PostCard
+              type="draft"
+              id={draft.id}
+              title={draft.title || "Untitled Draft"}
+              author={draft.author?.name ?? "Unknown"}
+              username={draft.author?.username}
+              date={new Date(draft.updatedAt)}
+              tags={draft.tags}
+            />
+          ))}
+        </div>
+      ) : (
+        <p class="text-base text-gray-500">No drafts found.</p>
+      )
+    }
+
+    {
+      (myAfter || myDrafts?.pageInfo.hasNextPage) && (
+        <nav class="mt-4 flex items-center justify-between border-t border-gray-200 pt-3">
+          <div class="w-28">
+            {myAfter && (
+              <a
+                href="/drafts"
+                class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+              >
+                &larr; First
+              </a>
+            )}
+          </div>
+          <span class="text-base text-gray-500">
+            Page {myPage} of {myTotalPages}
+          </span>
+          <div class="w-28 text-right">
+            {myDrafts?.pageInfo.hasNextPage && (
+              <a
+                href={buildMyNextUrl(myDrafts.pageInfo.endCursor, myPage + 1)}
+                data-astro-prefetch="viewport"
+                class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Next &rarr;
+              </a>
+            )}
+          </div>
+        </nav>
+      )
+    }
+  </section>
+</Layout>

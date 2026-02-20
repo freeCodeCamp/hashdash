@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars and fill in the values
+# See: https://developers.cloudflare.com/workers/configuration/secrets/
+
+HASHNODE_TOKEN=your-hashnode-personal-access-token

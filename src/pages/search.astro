@@ -1,0 +1,141 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PostCard from "../components/PostCard.astro";
+import { getClient, SEARCH_POSTS } from "../lib/hashnode";
+
+const query = Astro.url.searchParams.get("q")?.trim() ?? "";
+const after = Astro.url.searchParams.get("after") || undefined;
+const page = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("page") || "1", 10),
+);
+
+let postResults: Array<{
+  id: string;
+  title: string;
+  brief: string;
+  slug: string;
+  url: string;
+  publishedAt: string;
+  author: { name: string; username: string };
+  coverImage: { url: string } | null;
+}> = [];
+let hasNextPage = false;
+let endCursor = "";
+let fetchError = "";
+
+if (query) {
+  try {
+    const env = Astro.locals.runtime.env;
+    const client = getClient(env);
+
+    const pubResult = await client.query<{
+      publication: { id: string };
+    }>("query GetPubId($host: String!) { publication(host: $host) { id } }", {
+      host: env.HASHNODE_HOST,
+    });
+
+    const publicationId = pubResult.publication.id;
+
+    const searchResult = await client.query<{
+      searchPostsOfPublication: {
+        edges: Array<{ node: (typeof postResults)[number] }>;
+        pageInfo: { hasNextPage: boolean; endCursor: string };
+      };
+    }>(SEARCH_POSTS, {
+      filter: { query, publicationId },
+      first: 20,
+      after,
+    });
+
+    postResults =
+      searchResult.searchPostsOfPublication?.edges?.map((e) => e.node) ?? [];
+    hasNextPage =
+      searchResult.searchPostsOfPublication?.pageInfo?.hasNextPage ?? false;
+    endCursor =
+      searchResult.searchPostsOfPublication?.pageInfo?.endCursor ?? "";
+  } catch (e) {
+    fetchError =
+      e instanceof Error ? e.message : "Search failed. Please try again.";
+  }
+}
+---
+
+<Layout title={query ? `Search: ${query}` : "Search"}>
+  <h1 class="mb-6 text-2xl font-bold">Search</h1>
+
+  {
+    fetchError && (
+      <div class="mb-6 border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        {fetchError}
+      </div>
+    )
+  }
+
+  {
+    !query && (
+      <p class="text-base text-gray-500">
+        Enter a search term to find published posts.
+      </p>
+    )
+  }
+
+  {
+    query && (
+      <div>
+        <p class="mb-6 text-base text-gray-500">
+          Results for "<strong>{query}</strong>"
+        </p>
+
+        <h2 class="mb-3 text-lg font-semibold">
+          Published Posts ({postResults.length})
+        </h2>
+        {postResults.length > 0 ? (
+          <div class="mb-8 flex flex-col gap-3">
+            {postResults.map((post) => (
+              <PostCard
+                type="post"
+                id={post.id}
+                title={post.title}
+                author={post.author?.name ?? "Unknown"}
+                username={post.author?.username}
+                date={new Date(post.publishedAt)}
+                brief={post.brief}
+                url={post.url}
+              />
+            ))}
+          </div>
+        ) : (
+          <p class="mb-8 text-base text-gray-500">No published posts found.</p>
+        )}
+
+        {(after || hasNextPage) && (
+          <nav class="mt-4 flex items-center justify-between border-t border-gray-200 pt-3">
+            <div class="w-28">
+              {after && (
+                <a
+                  href={`/search?q=${encodeURIComponent(query)}`}
+                  class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  &larr; First
+                </a>
+              )}
+            </div>
+            <span class="text-base text-gray-500">Page {page}</span>
+            <div class="w-28 text-right">
+              {hasNextPage && (
+                <a
+                  href={`/search?q=${encodeURIComponent(query)}&after=${endCursor}&page=${page + 1}`}
+                  data-astro-prefetch="viewport"
+                  class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Next &rarr;
+                </a>
+              )}
+            </div>
+          </nav>
+        )}
+      </div>
+    )
+  }
+</Layout>

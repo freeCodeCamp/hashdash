@@ -1,0 +1,24 @@
+---
+interface Props {
+  success?: string | null;
+  error?: string | null;
+}
+
+const { success, error } = Astro.props;
+---
+
+{
+  success && (
+    <div class="mb-6 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+      {success === "1" ? "Action completed successfully." : success}
+    </div>
+  )
+}
+
+{
+  error && (
+    <div class="mb-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+      {error}
+    </div>
+  )
+}

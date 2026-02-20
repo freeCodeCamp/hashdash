@@ -1,0 +1,125 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PostCard from "../components/PostCard.astro";
+import { getClient, GET_PUBLICATION_POSTS } from "../lib/hashnode";
+
+const PAGE_SIZE = 50;
+const after = Astro.url.searchParams.get("after");
+const page = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("page") || "1", 10),
+);
+
+const env = Astro.locals.runtime.env;
+const client = getClient(env);
+
+type PostNode = {
+  id: string;
+  cuid: string;
+  title: string;
+  brief: string;
+  slug: string;
+  url: string;
+  publishedAt: string;
+  updatedAt: string | null;
+  readTimeInMinutes: number;
+  author: { name: string; username: string };
+  coverImage: { url: string } | null;
+  tags: Array<{ id: string; name: string; slug: string }>;
+};
+
+let posts: PostNode[] = [];
+let pageInfo = { hasNextPage: false, endCursor: "" };
+let totalDocuments = 0;
+let fetchError = "";
+
+try {
+  const result = await client.query<{
+    publication: {
+      posts: {
+        totalDocuments: number;
+        pageInfo: { hasNextPage: boolean; endCursor: string };
+        edges: Array<{ node: PostNode }>;
+      };
+    };
+  }>(GET_PUBLICATION_POSTS, {
+    host: env.HASHNODE_HOST,
+    first: PAGE_SIZE,
+    after: after || undefined,
+  });
+
+  ({ pageInfo, totalDocuments } = result.publication.posts);
+  posts = result.publication.posts.edges.map((e) => e.node);
+} catch (e) {
+  fetchError = e instanceof Error ? e.message : "Failed to load posts.";
+}
+
+const totalPages = Math.ceil(totalDocuments / PAGE_SIZE);
+---
+
+<Layout title="Published">
+  <div class="mb-6 flex items-center justify-between">
+    <h1 class="text-2xl font-bold">Published</h1>
+    <span class="text-base text-gray-500">{totalDocuments} total</span>
+  </div>
+
+  {
+    fetchError && (
+      <div class="mb-6 border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        {fetchError}
+      </div>
+    )
+  }
+
+  <div class="flex flex-col gap-3">
+    {
+      posts.map((post) => (
+        <PostCard
+          type="post"
+          id={post.id}
+          cuid={post.cuid}
+          title={post.title}
+          author={post.author?.name ?? "Unknown"}
+          username={post.author?.username}
+          date={new Date(post.publishedAt)}
+          brief={post.brief}
+          url={post.url}
+          readTimeInMinutes={post.readTimeInMinutes}
+          tags={post.tags}
+          coverImageUrl={post.coverImage?.url}
+        />
+      ))
+    }
+  </div>
+
+  <nav
+    class="mt-8 flex items-center justify-between border-t border-gray-200 pt-4"
+  >
+    <div class="w-28">
+      {
+        after && (
+          <a
+            href="/"
+            class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+          >
+            &larr; First
+          </a>
+        )
+      }
+    </div>
+    <span class="text-base text-gray-500">Page {page} of {totalPages}</span>
+    <div class="w-28 text-right">
+      {
+        pageInfo.hasNextPage && (
+          <a
+            href={`/?after=${pageInfo.endCursor}&page=${page + 1}`}
+            data-astro-prefetch="viewport"
+            class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
+          >
+            Next &rarr;
+          </a>
+        )
+      }
+    </div>
+  </nav>
+</Layout>

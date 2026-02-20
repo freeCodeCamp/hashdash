@@ -1,0 +1,296 @@
+---
+interface Props {
+  type: "post" | "draft";
+  id: string;
+  cuid?: string;
+  title: string;
+  author: string;
+  username?: string;
+  date: Date;
+  brief?: string;
+  readTimeInMinutes?: number;
+  tags?: Array<{ name: string }>;
+  coverImageUrl?: string;
+  url?: string;
+  subtitle?: string;
+  seoTitle?: string;
+  seoDescription?: string;
+  seriesName?: string;
+}
+
+const {
+  type,
+  id,
+  cuid,
+  title,
+  author,
+  username,
+  date,
+  brief,
+  readTimeInMinutes,
+  tags,
+  coverImageUrl,
+  url,
+  subtitle,
+  seoTitle,
+  seoDescription,
+  seriesName,
+} = Astro.props;
+
+const editUrl =
+  type === "post" && cuid
+    ? `https://hashnode.com/edit/${cuid}`
+    : `https://hashnode.com/draft/${id}`;
+
+const hasDetails =
+  brief ||
+  subtitle ||
+  readTimeInMinutes ||
+  (tags && tags.length > 0) ||
+  coverImageUrl ||
+  url ||
+  seoTitle ||
+  seoDescription ||
+  seriesName;
+
+const dateStr = date.toLocaleDateString("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
+---
+
+<div
+  data-card
+  class="border border-gray-200 bg-white p-4 transition-colors hover:border-gray-300"
+>
+  <div
+    role="button"
+    tabindex="0"
+    aria-expanded="false"
+    data-card-toggle
+    class="flex cursor-pointer items-center justify-between gap-3 select-none"
+  >
+    <div class="min-w-0 flex-1">
+      <h3 class="truncate text-base leading-tight font-semibold text-gray-900">
+        {title}
+      </h3>
+      <p class="mt-1 truncate text-sm text-gray-500">
+        {author}{username && <span class="text-gray-400"> @{username}</span>}
+        <span class="mx-1.5">&middot;</span>
+        <time datetime={date.toISOString()}>{dateStr}</time>
+        {
+          readTimeInMinutes && (
+            <>
+              <>
+                <span class="mx-1.5">&middot;</span>
+                <span>{readTimeInMinutes} min</span>
+              </>
+            </>
+          )
+        }
+      </p>
+    </div>
+    <div class="flex shrink-0 items-center gap-1">
+      <a
+        href={editUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        data-card-edit
+        class="p-2 text-gray-400 hover:text-gray-700"
+        aria-label="Edit on Hashnode"
+      >
+        <svg
+          class="h-5 w-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke-width="2"
+          stroke="currentColor"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+          ></path>
+        </svg>
+      </a>
+      <svg
+        data-card-chevron
+        class="h-4 w-4 text-gray-400 transition-transform duration-200"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="2"
+        stroke="currentColor"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M8.25 4.5l7.5 7.5-7.5 7.5"></path>
+      </svg>
+    </div>
+  </div>
+
+  {
+    hasDetails && (
+      <div data-card-details class="mt-3 hidden border-t border-gray-200 pt-3">
+        <table class="w-full text-sm">
+          <tbody>
+            {brief && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Brief
+                </td>
+                <td class="py-1 text-gray-700">{brief}</td>
+              </tr>
+            )}
+            {subtitle && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Subtitle
+                </td>
+                <td class="py-1 text-gray-700">{subtitle}</td>
+              </tr>
+            )}
+            {url && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Post URL
+                </td>
+                <td class="py-1">
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="break-all text-blue-600 hover:underline"
+                  >
+                    {url}
+                  </a>
+                </td>
+              </tr>
+            )}
+            {coverImageUrl && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Cover Image
+                </td>
+                <td class="py-1">
+                  <a
+                    href={coverImageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="break-all text-blue-600 hover:underline"
+                  >
+                    {coverImageUrl}
+                  </a>
+                  <img
+                    src={coverImageUrl}
+                    alt=""
+                    loading="lazy"
+                    class="mt-2 max-w-md border border-gray-200"
+                  />
+                </td>
+              </tr>
+            )}
+            {tags && tags.length > 0 && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Tags
+                </td>
+                <td class="py-1">
+                  <div class="flex flex-wrap gap-1">
+                    {tags.map((tag) => (
+                      <span class="bg-gray-100 px-2 py-0.5 text-sm text-gray-600">
+                        {tag.name}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+              </tr>
+            )}
+            {readTimeInMinutes && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Read Time
+                </td>
+                <td class="py-1 text-gray-700">{readTimeInMinutes} min</td>
+              </tr>
+            )}
+            {seriesName && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  Series
+                </td>
+                <td class="py-1 text-gray-700">{seriesName}</td>
+              </tr>
+            )}
+            {seoTitle && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  SEO Title
+                </td>
+                <td class="py-1 text-gray-700">{seoTitle}</td>
+              </tr>
+            )}
+            {seoDescription && (
+              <tr class="align-top">
+                <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                  SEO Description
+                </td>
+                <td class="py-1 text-gray-700">{seoDescription}</td>
+              </tr>
+            )}
+            <tr class="align-top">
+              <td class="py-1 pr-4 font-medium whitespace-nowrap text-gray-500">
+                Edit
+              </td>
+              <td class="py-1">
+                <a
+                  href={editUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="break-all text-blue-600 hover:underline"
+                >
+                  {editUrl}
+                </a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    )
+  }
+</div>
+
+<script>
+  function initCardToggles() {
+    document.querySelectorAll("[data-card-edit]").forEach((editBtn) => {
+      if (editBtn.hasAttribute("data-initialized")) return;
+      editBtn.setAttribute("data-initialized", "");
+      editBtn.addEventListener("click", (e) => e.stopPropagation());
+    });
+    document.querySelectorAll("[data-card-toggle]").forEach((toggle) => {
+      if (toggle.hasAttribute("data-initialized")) return;
+      toggle.setAttribute("data-initialized", "");
+      toggle.addEventListener("click", () => {
+        const card = toggle.closest("[data-card]");
+        const details = card?.querySelector("[data-card-details]");
+        const chevron = toggle.querySelector("[data-card-chevron]");
+        const isHidden = details?.classList.toggle("hidden");
+        chevron?.classList.toggle("rotate-90");
+        toggle.setAttribute("aria-expanded", String(!isHidden));
+      });
+      toggle.addEventListener("keydown", (e) => {
+        if (
+          e instanceof KeyboardEvent &&
+          (e.key === "Enter" || e.key === " ")
+        ) {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement)?.click();
+        }
+      });
+    });
+  }
+
+  initCardToggles();
+  document.addEventListener("astro:page-load", initCardToggles);
+</script>
