@@ -1,125 +1,844 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PostCard from "../components/PostCard.astro";
-import { getClient, GET_PUBLICATION_POSTS } from "../lib/hashnode";
+import { getClient, GET_SCHEDULED_DRAFTS, normalizeTags } from "../lib/hashnode";
+import type { PostRow, DraftRow } from "../lib/db";
 
 const PAGE_SIZE = 50;
-const after = Astro.url.searchParams.get("after");
+const env = Astro.locals.runtime.env;
+const db = env.POSTS_DB;
+
+const tab = Astro.url.searchParams.get("tab") || "published";
+const q = Astro.url.searchParams.get("q")?.trim() || "";
+const author = Astro.url.searchParams.get("author") || "";
+const from = Astro.url.searchParams.get("from") || "";
+const to = Astro.url.searchParams.get("to") || "";
 const page = Math.max(
   1,
   parseInt(Astro.url.searchParams.get("page") || "1", 10),
 );
+const offset = (page - 1) * PAGE_SIZE;
 
-const env = Astro.locals.runtime.env;
-const client = getClient(env);
-
-type PostNode = {
+type ScheduledDraftNode = {
   id: string;
-  cuid: string;
   title: string;
-  brief: string;
   slug: string;
-  url: string;
-  publishedAt: string;
-  updatedAt: string | null;
-  readTimeInMinutes: number;
+  updatedAt: string;
+  scheduledDate: string | null;
   author: { name: string; username: string };
-  coverImage: { url: string } | null;
-  tags: Array<{ id: string; name: string; slug: string }>;
+  tagsV2: Array<{
+    __typename: string;
+    id?: string;
+    name?: string;
+    slug?: string;
+  }>;
+};
+type ScheduledDraftsResult = {
+  totalDocuments: number;
+  pageInfo: { hasNextPage: boolean; endCursor: string };
+  edges: Array<{ node: ScheduledDraftNode }>;
 };
 
-let posts: PostNode[] = [];
-let pageInfo = { hasNextPage: false, endCursor: "" };
+let posts: PostRow[] = [];
 let totalDocuments = 0;
 let fetchError = "";
+let authors: Array<{ author_username: string; author_name: string }> = [];
 
-try {
-  const result = await client.query<{
-    publication: {
-      posts: {
-        totalDocuments: number;
-        pageInfo: { hasNextPage: boolean; endCursor: string };
-        edges: Array<{ node: PostNode }>;
-      };
-    };
-  }>(GET_PUBLICATION_POSTS, {
-    host: env.HASHNODE_HOST,
-    first: PAGE_SIZE,
-    after: after || undefined,
-  });
+let publishedTotal = 0;
+let draftsTotal = 0;
+let draftRows: DraftRow[] = [];
+let draftsAuthors: Array<{ author_username: string; author_name: string }> = [];
+let draftsTotalDocuments = 0;
 
-  ({ pageInfo, totalDocuments } = result.publication.posts);
-  posts = result.publication.posts.edges.map((e) => e.node);
-} catch (e) {
-  fetchError = e instanceof Error ? e.message : "Failed to load posts.";
+let scheduledTotal = 0;
+let schedEdges: Array<{ node: ScheduledDraftNode }> = [];
+let schedHasNextPage = false;
+let schedEndCursor = "";
+const schedAfter = Astro.url.searchParams.get("sched_after") || "";
+const schedPage = Math.max(
+  1,
+  parseInt(Astro.url.searchParams.get("sched_page") || "1", 10),
+);
+
+const client = getClient(env);
+const [d1PostsCount, d1DraftsCount, schedCountResult] = await Promise.allSettled([
+  db.prepare("SELECT COUNT(*) as count FROM posts").first<{ count: number }>(),
+  db.prepare("SELECT COUNT(*) as count FROM drafts").first<{ count: number }>(),
+  client.query<{ publication: { scheduledDrafts: { totalDocuments: number } } }>(
+    GET_SCHEDULED_DRAFTS,
+    { host: env.HASHNODE_HOST, first: 1 },
+  ),
+]);
+
+if (d1PostsCount.status === "fulfilled" && d1PostsCount.value) {
+  publishedTotal = d1PostsCount.value.count;
+}
+if (d1DraftsCount.status === "fulfilled" && d1DraftsCount.value) {
+  draftsTotal = d1DraftsCount.value.count;
+}
+if (schedCountResult.status === "fulfilled") {
+  scheduledTotal = schedCountResult.value.publication.scheduledDrafts.totalDocuments;
+}
+
+if (tab === "published") {
+  try {
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (q) {
+      conditions.push("title LIKE ?");
+      params.push(`%${q}%`);
+    }
+    if (author) {
+      conditions.push("author_username = ?");
+      params.push(author);
+    }
+    if (from) {
+      conditions.push("published_at >= ?");
+      params.push(from);
+    }
+    if (to) {
+      conditions.push("published_at <= ?");
+      params.push(to + "T23:59:59.999Z");
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const countResult = await db
+      .prepare(`SELECT COUNT(*) as count FROM posts ${whereClause}`)
+      .bind(...params)
+      .first<{ count: number }>();
+    totalDocuments = countResult?.count ?? 0;
+
+    const result = await db
+      .prepare(
+        `SELECT * FROM posts ${whereClause} ORDER BY published_at DESC LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, PAGE_SIZE, offset)
+      .all<PostRow>();
+    posts = result.results;
+
+    const authorsResult = await db
+      .prepare(
+        "SELECT DISTINCT author_username, author_name FROM posts ORDER BY author_name",
+      )
+      .all<{ author_username: string; author_name: string }>();
+    authors = authorsResult.results;
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : "Failed to load posts.";
+  }
+}
+
+if (tab === "drafts") {
+  try {
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    if (q) {
+      conditions.push("title LIKE ?");
+      params.push(`%${q}%`);
+    }
+    if (author) {
+      conditions.push("author_username = ?");
+      params.push(author);
+    }
+    if (from) {
+      conditions.push("updated_at >= ?");
+      params.push(from);
+    }
+    if (to) {
+      conditions.push("updated_at <= ?");
+      params.push(to + "T23:59:59.999Z");
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const draftCountResult = await db
+      .prepare(`SELECT COUNT(*) as count FROM drafts ${whereClause}`)
+      .bind(...params)
+      .first<{ count: number }>();
+    draftsTotalDocuments = draftCountResult?.count ?? 0;
+
+    const draftsResult = await db
+      .prepare(
+        `SELECT * FROM drafts ${whereClause} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, PAGE_SIZE, offset)
+      .all<DraftRow>();
+    draftRows = draftsResult.results;
+
+    const draftsAuthorsResult = await db
+      .prepare(
+        "SELECT DISTINCT author_username, author_name FROM drafts ORDER BY author_name",
+      )
+      .all<{ author_username: string; author_name: string }>();
+    draftsAuthors = draftsAuthorsResult.results;
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : "Failed to load drafts.";
+  }
+}
+
+if (tab === "scheduled") {
+  try {
+    const schedResult = await client.query<{
+      publication: { scheduledDrafts: ScheduledDraftsResult };
+    }>(GET_SCHEDULED_DRAFTS, {
+      host: env.HASHNODE_HOST,
+      first: PAGE_SIZE,
+      after: schedAfter || undefined,
+    });
+    const sched = schedResult.publication.scheduledDrafts;
+    scheduledTotal = sched.totalDocuments;
+    schedEdges = sched.edges;
+    schedHasNextPage = sched.pageInfo.hasNextPage;
+    schedEndCursor = sched.pageInfo.endCursor;
+  } catch (e) {
+    fetchError = e instanceof Error ? e.message : "Failed to load scheduled posts.";
+  }
 }
 
 const totalPages = Math.ceil(totalDocuments / PAGE_SIZE);
+const draftsTotalPages = Math.ceil(draftsTotalDocuments / PAGE_SIZE);
+
+function tabUrl(t: string): string {
+  const params = new URLSearchParams();
+  if (t !== "published") params.set("tab", t);
+  if (q) params.set("q", q);
+  if (author) params.set("author", author);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
+function pageUrl(p: number): string {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (author) params.set("author", author);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (p > 1) params.set("page", String(p));
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
+function draftsPageUrl(p: number): string {
+  const params = new URLSearchParams();
+  params.set("tab", "drafts");
+  if (q) params.set("q", q);
+  if (author) params.set("author", author);
+  if (from) params.set("from", from);
+  if (to) params.set("to", to);
+  if (p > 1) params.set("page", String(p));
+  return `/?${params.toString()}`;
+}
+
+function schedPageUrl(newAfter: string, newPage: number): string {
+  const params = new URLSearchParams();
+  params.set("tab", "scheduled");
+  params.set("sched_after", newAfter);
+  params.set("sched_page", String(newPage));
+  return `/?${params.toString()}`;
+}
+
+const hasActiveFilters = q || author || from || to;
+
+type DatePreset = { label: string; days: number | null };
+const datePresets: DatePreset[] = [
+  { label: "Last week", days: 7 },
+  { label: "Last 30 days", days: 30 },
+  { label: "Last 60 days", days: 60 },
+  { label: "All time", days: null },
+];
+
+function presetFromDate(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().split("T")[0];
+}
+
+function activePreset(): string | null {
+  if (!from && !to) return "All time";
+  if (to) return null;
+  for (const p of datePresets) {
+    if (p.days && from === presetFromDate(p.days)) return p.label;
+  }
+  return null;
+}
+
+function presetUrl(days: number | null, currentTab: string): string {
+  const params = new URLSearchParams();
+  if (currentTab !== "published") params.set("tab", currentTab);
+  if (q) params.set("q", q);
+  if (author) params.set("author", author);
+  if (days) params.set("from", presetFromDate(days));
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
+const currentPreset = activePreset();
+
+const tabs = [
+  { key: "published", label: "Published", count: publishedTotal },
+  { key: "drafts", label: "Drafts", count: draftsTotal },
+  { key: "scheduled", label: "Scheduled", count: scheduledTotal },
+  { key: "archived", label: "Archived", count: null },
+];
 ---
 
-<Layout title="Published">
+<Layout
+  title={tab === "drafts"
+    ? "Drafts"
+    : tab === "scheduled"
+      ? "Scheduled"
+      : tab === "archived"
+        ? "Archived"
+        : "Published"}
+>
   <div class="mb-6 flex items-center justify-between">
-    <h1 class="text-2xl font-bold">Published</h1>
-    <span class="text-base text-gray-500">{totalDocuments} total</span>
+    <h1 class="text-2xl font-bold">Articles</h1>
   </div>
 
-  {
-    fetchError && (
-      <div class="mb-6 border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-        {fetchError}
-      </div>
-    )
-  }
-
-  <div class="flex flex-col gap-3">
+  <div class="mb-6 flex gap-0 border-b border-gray-700">
     {
-      posts.map((post) => (
-        <PostCard
-          type="post"
-          id={post.id}
-          cuid={post.cuid}
-          title={post.title}
-          author={post.author?.name ?? "Unknown"}
-          username={post.author?.username}
-          date={new Date(post.publishedAt)}
-          brief={post.brief}
-          url={post.url}
-          readTimeInMinutes={post.readTimeInMinutes}
-          tags={post.tags}
-          coverImageUrl={post.coverImage?.url}
-        />
+      tabs.map((t) => (
+        <a
+          href={tabUrl(t.key)}
+          class:list={[
+            "-mb-px px-4 py-2 text-sm font-medium",
+            tab === t.key
+              ? "border-b-2 border-blue-500 text-blue-400"
+              : "text-gray-400 hover:text-gray-200",
+          ]}
+        >
+          {t.label}{" "}
+          {t.count !== null && (
+            <span class="text-gray-500">{t.count.toLocaleString()}</span>
+          )}
+        </a>
       ))
     }
   </div>
 
-  <nav
-    class="mt-8 flex items-center justify-between border-t border-gray-200 pt-4"
-  >
-    <div class="w-28">
-      {
-        after && (
-          <a
-            href="/"
-            class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
-          >
-            &larr; First
-          </a>
-        )
+  {
+    tab === "published" && (
+      <>
+        <div class="mb-3 flex items-center gap-1">
+          <span class="mr-1 text-sm text-gray-500">Period:</span>
+          {datePresets.map((p) => (
+            <a
+              href={presetUrl(p.days, "published")}
+              class:list={[
+                "px-2 py-1 text-sm",
+                currentPreset === p.label
+                  ? "font-semibold text-blue-500"
+                  : "text-gray-400 hover:text-gray-200",
+              ]}
+            >
+              {p.label}
+            </a>
+          ))}
+        </div>
+
+        <form
+          method="get"
+          action="/"
+          class="mb-6 flex flex-wrap items-end gap-3"
+        >
+          <div class="flex-1" style="min-width: 200px;">
+            <label
+              for="filter-q"
+              class="mb-1 block text-sm font-medium text-gray-300"
+            >
+              Search
+            </label>
+            <input
+              type="text"
+              id="filter-q"
+              name="q"
+              value={q}
+              placeholder="Search by title..."
+              class="w-full border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+          <div style="min-width: 280px;" class="relative" data-author-combobox>
+            <label
+              for="filter-author"
+              class="mb-1 block text-sm font-medium text-gray-300"
+            >
+              Author
+            </label>
+            <input
+              type="hidden"
+              name="author"
+              data-author-value
+              value={author}
+            />
+            <div class="relative">
+              <input
+                type="text"
+                id="filter-author"
+                autocomplete="off"
+                data-author-input
+                value={
+                  author
+                    ? authors.find((a) => a.author_username === author)
+                      ? `${authors.find((a) => a.author_username === author)!.author_name} (@${author})`
+                      : author
+                    : ""
+                }
+                placeholder="All authors"
+                class="w-full border border-gray-600 bg-gray-800 py-2 pr-8 pl-3 text-sm text-gray-200 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+              <svg
+                class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+                />
+              </svg>
+            </div>
+            <div
+              data-author-dropdown
+              style="scrollbar-width: none;"
+              class="absolute z-10 mt-1 hidden max-h-60 w-full overflow-y-auto border border-gray-600 bg-gray-800 shadow-lg [&::-webkit-scrollbar]:hidden"
+            >
+              <div
+                data-author-option
+                data-username=""
+                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-700"
+              >
+                All authors
+              </div>
+              {authors.map((a) => (
+                <div
+                  data-author-option
+                  data-username={a.author_username}
+                  data-label={`${a.author_name} (@${a.author_username})`}
+                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-700"
+                >
+                  {a.author_name}{" "}
+                  <span class="text-gray-400">@{a.author_username}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {from && <input type="hidden" name="from" value={from} />}
+          {to && <input type="hidden" name="to" value={to} />}
+          <div class="flex gap-2">
+            <button
+              type="submit"
+              class="border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700"
+            >
+              Filter
+            </button>
+            {hasActiveFilters && (
+              <a
+                href="/"
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700"
+              >
+                Clear
+              </a>
+            )}
+          </div>
+        </form>
+
+        {fetchError && (
+          <div class="mb-6 border border-red-800 bg-red-900/30 p-4 text-sm text-red-300">
+            {fetchError}
+          </div>
+        )}
+
+        <div class="flex flex-col gap-3">
+          {posts.map((post) => (
+            <PostCard
+              type="post"
+              id={post.id}
+              cuid={post.cuid}
+              title={post.title}
+              author={post.author_name}
+              username={post.author_username}
+              date={new Date(post.published_at)}
+              brief={post.brief ?? undefined}
+              url={post.url}
+              readTimeInMinutes={post.read_time ?? undefined}
+              tags={post.tags ? JSON.parse(post.tags) : []}
+              coverImageUrl={post.cover_image_url ?? undefined}
+            />
+          ))}
+        </div>
+
+        <nav class="mt-8 flex items-center justify-between border-t border-gray-700 pt-4">
+          <div class="w-28">
+            {page > 1 && (
+              <a
+                href={pageUrl(page - 1)}
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                &larr; Prev
+              </a>
+            )}
+          </div>
+          <span class="text-base text-gray-500">
+            Page {page} of {totalPages}
+          </span>
+          <div class="w-28 text-right">
+            {page < totalPages && (
+              <a
+                href={pageUrl(page + 1)}
+                data-astro-prefetch="viewport"
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                Next &rarr;
+              </a>
+            )}
+          </div>
+        </nav>
+      </>
+    )
+  }
+
+  {
+    tab === "drafts" && (
+      <>
+        <div class="mb-3 flex items-center gap-1">
+          <span class="mr-1 text-sm text-gray-500">Period:</span>
+          {datePresets.map((p) => (
+            <a
+              href={presetUrl(p.days, "drafts")}
+              class:list={[
+                "px-2 py-1 text-sm",
+                currentPreset === p.label
+                  ? "font-semibold text-blue-500"
+                  : "text-gray-400 hover:text-gray-200",
+              ]}
+            >
+              {p.label}
+            </a>
+          ))}
+        </div>
+
+        <form
+          method="get"
+          action="/"
+          class="mb-6 flex flex-wrap items-end gap-3"
+        >
+          <input type="hidden" name="tab" value="drafts" />
+          <div class="flex-1" style="min-width: 200px;">
+            <label
+              for="filter-q"
+              class="mb-1 block text-sm font-medium text-gray-300"
+            >
+              Search
+            </label>
+            <input
+              type="text"
+              id="filter-q"
+              name="q"
+              value={q}
+              placeholder="Search by title..."
+              class="w-full border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+            />
+          </div>
+          <div style="min-width: 280px;" class="relative" data-author-combobox>
+            <label
+              for="filter-author"
+              class="mb-1 block text-sm font-medium text-gray-300"
+            >
+              Author
+            </label>
+            <input
+              type="hidden"
+              name="author"
+              data-author-value
+              value={author}
+            />
+            <div class="relative">
+              <input
+                type="text"
+                id="filter-author"
+                autocomplete="off"
+                data-author-input
+                value={
+                  author
+                    ? draftsAuthors.find((a) => a.author_username === author)
+                      ? `${draftsAuthors.find((a) => a.author_username === author)!.author_name} (@${author})`
+                      : author
+                    : ""
+                }
+                placeholder="All authors"
+                class="w-full border border-gray-600 bg-gray-800 py-2 pr-8 pl-3 text-sm text-gray-200 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+              />
+              <svg
+                class="pointer-events-none absolute top-1/2 right-2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="2"
+                stroke="currentColor"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M19.5 8.25l-7.5 7.5-7.5-7.5"
+                />
+              </svg>
+            </div>
+            <div
+              data-author-dropdown
+              style="scrollbar-width: none;"
+              class="absolute z-10 mt-1 hidden max-h-60 w-full overflow-y-auto border border-gray-600 bg-gray-800 shadow-lg [&::-webkit-scrollbar]:hidden"
+            >
+              <div
+                data-author-option
+                data-username=""
+                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-700"
+              >
+                All authors
+              </div>
+              {draftsAuthors.map((a) => (
+                <div
+                  data-author-option
+                  data-username={a.author_username}
+                  data-label={`${a.author_name} (@${a.author_username})`}
+                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-700"
+                >
+                  {a.author_name}{" "}
+                  <span class="text-gray-400">@{a.author_username}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {from && <input type="hidden" name="from" value={from} />}
+          {to && <input type="hidden" name="to" value={to} />}
+          <div class="flex gap-2">
+            <button
+              type="submit"
+              class="border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700"
+            >
+              Filter
+            </button>
+            {hasActiveFilters && (
+              <a
+                href={tabUrl("drafts")}
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-sm font-medium text-gray-200 hover:bg-gray-700"
+              >
+                Clear
+              </a>
+            )}
+          </div>
+        </form>
+
+        {fetchError && (
+          <div class="mb-6 border border-red-800 bg-red-900/30 p-4 text-sm text-red-300">
+            {fetchError}
+          </div>
+        )}
+
+        <div class="flex flex-col gap-3">
+          {draftRows.map((draft) => (
+            <PostCard
+              type="draft"
+              id={draft.id}
+              title={draft.title || "Untitled Draft"}
+              author={draft.author_name}
+              username={draft.author_username}
+              date={new Date(draft.updated_at)}
+              tags={draft.tags ? JSON.parse(draft.tags) : []}
+            />
+          ))}
+        </div>
+
+        {draftRows.length === 0 && !fetchError && (
+          <div class="border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+            No drafts found.
+          </div>
+        )}
+
+        <nav class="mt-8 flex items-center justify-between border-t border-gray-700 pt-4">
+          <div class="w-28">
+            {page > 1 && (
+              <a
+                href={draftsPageUrl(page - 1)}
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                &larr; Prev
+              </a>
+            )}
+          </div>
+          <span class="text-base text-gray-500">
+            Page {page} of {draftsTotalPages}
+          </span>
+          <div class="w-28 text-right">
+            {page < draftsTotalPages && (
+              <a
+                href={draftsPageUrl(page + 1)}
+                data-astro-prefetch="viewport"
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                Next &rarr;
+              </a>
+            )}
+          </div>
+        </nav>
+      </>
+    )
+  }
+
+  {
+    tab === "scheduled" && (
+      <>
+        {fetchError && (
+          <div class="mb-6 border border-red-800 bg-red-900/30 p-4 text-sm text-red-300">
+            {fetchError}
+          </div>
+        )}
+
+        <div class="flex flex-col gap-3">
+          {schedEdges.map(({ node }) => (
+            <div>
+              <PostCard
+                type="draft"
+                id={node.id}
+                title={node.title || "Untitled Draft"}
+                author={node.author?.name ?? "Unknown"}
+                username={node.author?.username}
+                date={new Date(node.updatedAt)}
+                tags={normalizeTags(node.tagsV2)}
+              />
+              {node.scheduledDate && (
+                <div class="mt-1 ml-4 text-sm text-yellow-400">
+                  Scheduled: {new Date(node.scheduledDate).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {schedEdges.length === 0 && !fetchError && (
+          <div class="border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+            No scheduled posts found.
+          </div>
+        )}
+
+        <nav class="mt-8 flex items-center justify-between border-t border-gray-700 pt-4">
+          <div class="w-28">
+            {schedPage > 1 && (
+              <a
+                href={tabUrl("scheduled")}
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                &larr; First
+              </a>
+            )}
+          </div>
+          <span class="text-base text-gray-500">Page {schedPage}</span>
+          <div class="w-28 text-right">
+            {schedHasNextPage && (
+              <a
+                href={schedPageUrl(schedEndCursor, schedPage + 1)}
+                data-astro-prefetch="viewport"
+                class="inline-flex items-center border border-gray-600 bg-gray-800 px-4 py-2 text-base font-medium text-gray-200 hover:bg-gray-700"
+              >
+                Next &rarr;
+              </a>
+            )}
+          </div>
+        </nav>
+      </>
+    )
+  }
+
+  {
+    tab === "archived" && (
+      <div class="border border-gray-700 bg-gray-900 p-6 text-center text-gray-400">
+        Archived posts are not accessible via the Hashnode API.
+      </div>
+    )
+  }
+
+  <script is:inline>
+    (function () {
+      function initCombobox() {
+        var container = document.querySelector("[data-author-combobox]");
+        if (!container) return;
+
+        var input = container.querySelector("[data-author-input]");
+        var hidden = container.querySelector("[data-author-value]");
+        var dropdown = container.querySelector("[data-author-dropdown]");
+        var options = container.querySelectorAll("[data-author-option]");
+
+        function showDropdown() {
+          dropdown.classList.remove("hidden");
+        }
+
+        function hideDropdown() {
+          dropdown.classList.add("hidden");
+        }
+
+        function filterOptions() {
+          var term = input.value.toLowerCase();
+          var anyVisible = false;
+          for (var i = 0; i < options.length; i++) {
+            var text = options[i].textContent.toLowerCase();
+            var match = !term || text.indexOf(term) !== -1;
+            options[i].style.display = match ? "" : "none";
+            if (match) anyVisible = true;
+          }
+          if (anyVisible) {
+            showDropdown();
+          } else {
+            hideDropdown();
+          }
+        }
+
+        input.addEventListener("focus", function () {
+          filterOptions();
+        });
+
+        input.addEventListener("input", function () {
+          hidden.value = "";
+          filterOptions();
+        });
+
+        for (var i = 0; i < options.length; i++) {
+          options[i].addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            var username = this.getAttribute("data-username");
+            var label = this.getAttribute("data-label") || "";
+            hidden.value = username;
+            input.value = username ? label : "";
+            hideDropdown();
+          });
+        }
+
+        input.addEventListener("blur", function () {
+          setTimeout(hideDropdown, 150);
+        });
+
+        input.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") {
+            hideDropdown();
+            input.blur();
+          }
+        });
       }
-    </div>
-    <span class="text-base text-gray-500">Page {page} of {totalPages}</span>
-    <div class="w-28 text-right">
-      {
-        pageInfo.hasNextPage && (
-          <a
-            href={`/?after=${pageInfo.endCursor}&page=${page + 1}`}
-            data-astro-prefetch="viewport"
-            class="inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-base font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Next &rarr;
-          </a>
-        )
-      }
-    </div>
-  </nav>
+
+      initCombobox();
+      document.addEventListener("astro:page-load", initCombobox);
+    })();
+  </script>
 </Layout>

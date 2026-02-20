@@ -2,13 +2,13 @@
 const query = Astro.url.searchParams.get("q") ?? "";
 ---
 
-<form action="/search" method="get">
+<form action="/" method="get">
   <input
     type="text"
     name="q"
     value={query}
     placeholder="Search published posts..."
     aria-label="Search published posts"
-    class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
+    class="w-full border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-transparent focus:ring-2 focus:ring-blue-500 focus:outline-none"
   />
 </form>

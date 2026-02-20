@@ -10,8 +10,8 @@ const landingPageSrc = readFileSync(
   resolve(__dirname, "../pages/index.astro"),
   "utf-8",
 );
-const draftsSrc = readFileSync(
-  resolve(__dirname, "../pages/drafts/index.astro"),
+const submissionsSrc = readFileSync(
+  resolve(__dirname, "../pages/submissions.astro"),
   "utf-8",
 );
 const searchSrc = readFileSync(
@@ -32,29 +32,24 @@ describe("GraphQL client", () => {
     expect(hashnodeSrc).toContain("export function getClient");
   });
 
-  it("should export GET_PUBLICATION_POSTS with cuid field", () => {
-    expect(hashnodeSrc).toContain("export const GET_PUBLICATION_POSTS");
-    expect(hashnodeSrc).toMatch(/GET_PUBLICATION_POSTS[\s\S]*?cuid/);
-  });
-
   it("should export GET_PUBLICATION_DRAFTS", () => {
     expect(hashnodeSrc).toContain("export const GET_PUBLICATION_DRAFTS");
-  });
-
-  it("should export GET_MY_DRAFTS", () => {
-    expect(hashnodeSrc).toContain("export const GET_MY_DRAFTS");
-  });
-
-  it("should export SEARCH_POSTS", () => {
-    expect(hashnodeSrc).toContain("export const SEARCH_POSTS");
   });
 
   it("should NOT export any mutations", () => {
     expect(hashnodeSrc).not.toContain("mutation");
   });
 
-  it("should NOT export GET_POST", () => {
-    expect(hashnodeSrc).not.toContain("export const GET_POST");
+  it("should export GET_POST_BY_ID for webhook handler", () => {
+    expect(hashnodeSrc).toContain("export const GET_POST_BY_ID");
+  });
+
+  it("should export GET_SUBMITTED_DRAFTS", () => {
+    expect(hashnodeSrc).toContain("export const GET_SUBMITTED_DRAFTS");
+  });
+
+  it("should have submittedDrafts query field in GET_SUBMITTED_DRAFTS", () => {
+    expect(hashnodeSrc).toMatch(/GET_SUBMITTED_DRAFTS[\s\S]*?submittedDrafts/);
   });
 
   it("should NOT export isDryRun", () => {
@@ -76,13 +71,13 @@ describe("Landing page (published posts)", () => {
     expect(landingPageSrc).not.toContain("getCollection");
   });
 
-  it("should use getClient and GET_PUBLICATION_POSTS", () => {
-    expect(landingPageSrc).toContain("getClient");
-    expect(landingPageSrc).toContain("GET_PUBLICATION_POSTS");
+  it("should use POSTS_DB (D1)", () => {
+    expect(landingPageSrc).toContain("POSTS_DB");
   });
 
-  it("should read cursor from URL params", () => {
-    expect(landingPageSrc).toMatch(/searchParams.*get.*['"]after['"]/);
+  it("should use page-number pagination for published tab", () => {
+    expect(landingPageSrc).toContain("LIMIT");
+    expect(landingPageSrc).toContain("OFFSET");
   });
 
   it("should pass type=post to PostCard", () => {
@@ -96,32 +91,23 @@ describe("Landing page (published posts)", () => {
 
   it("should display error banner on failure", () => {
     expect(landingPageSrc).toContain("fetchError");
-    expect(landingPageSrc).toMatch(/bg-red-50/);
+    expect(landingPageSrc).toMatch(/bg-red-900/);
   });
 });
 
-describe("Drafts page", () => {
+describe("Submissions page", () => {
   it("should NOT use getCollection", () => {
-    expect(draftsSrc).not.toContain("getCollection");
+    expect(submissionsSrc).not.toContain("getCollection");
   });
 
-  it("should use GET_PUBLICATION_DRAFTS and GET_MY_DRAFTS", () => {
-    expect(draftsSrc).toContain("GET_PUBLICATION_DRAFTS");
-    expect(draftsSrc).toContain("GET_MY_DRAFTS");
+  it("should show API unavailable placeholder", () => {
+    expect(submissionsSrc).toContain("not currently accessible");
   });
 
-  it("should have independent pagination params", () => {
-    expect(draftsSrc).toContain("pub_after");
-    expect(draftsSrc).toContain("my_after");
-  });
-
-  it("should use Promise.all for parallel queries", () => {
-    expect(draftsSrc).toContain("Promise.all");
-  });
-
-  it("should have error handling with try/catch", () => {
-    expect(draftsSrc).toMatch(/try\s*\{/);
-    expect(draftsSrc).toMatch(/catch\s*\(/);
+  it("should NOT have active API calls or pagination", () => {
+    expect(submissionsSrc).not.toContain("GET_SUBMITTED_DRAFTS");
+    expect(submissionsSrc).not.toContain("sub_after");
+    expect(submissionsSrc).not.toContain("sched_after");
   });
 });
 
@@ -130,13 +116,9 @@ describe("Search page", () => {
     expect(searchSrc).not.toContain("getCollection");
   });
 
-  it("should use SEARCH_POSTS", () => {
-    expect(searchSrc).toContain("SEARCH_POSTS");
-  });
-
-  it("should have error handling with try/catch", () => {
-    expect(searchSrc).toMatch(/try\s*\{/);
-    expect(searchSrc).toMatch(/catch\s*\(/);
+  it("should redirect to / with query param", () => {
+    expect(searchSrc).toContain("Astro.redirect");
+    expect(searchSrc).toMatch(/\?q=/);
   });
 });
 

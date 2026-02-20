@@ -7,11 +7,6 @@ const layoutSrc = readFileSync(
   "utf-8",
 );
 
-const searchBarSrc = readFileSync(
-  resolve(__dirname, "../components/SearchBar.astro"),
-  "utf-8",
-);
-
 describe("Brand: fCC puck logo replaces text", () => {
   it("should NOT contain 'hashdash' as visible text in the brand link", () => {
     expect(layoutSrc).not.toMatch(/>\s*hashdash\s*<\/a>/);
@@ -32,6 +27,10 @@ describe("Brand: fCC puck logo replaces text", () => {
 
   it("should still use 'hashdash' as the default page title", () => {
     expect(layoutSrc).toMatch(/['"]hashdash['"]/);
+  });
+
+  it("logo should have invert class for white color", () => {
+    expect(layoutSrc).toContain("invert");
   });
 });
 
@@ -54,34 +53,30 @@ describe("Top nav replaces sidebar", () => {
 });
 
 describe("Nav labels", () => {
-  it("should contain 'Published' label", () => {
-    expect(layoutSrc).toMatch(/['"]Published['"]/);
+  it("should contain 'Articles' label", () => {
+    expect(layoutSrc).toMatch(/['"]Articles['"]/);
   });
 
   it("should NOT contain 'Home' label", () => {
     expect(layoutSrc).not.toMatch(/label:\s*['"]Home['"]/);
   });
 
-  it("'Published' link should href to '/'", () => {
+  it("'Articles' link should href to '/'", () => {
     expect(layoutSrc).toMatch(
-      /href:\s*['"]\/['"][\s\S]*?label:\s*['"]Published['"]/,
+      /href:\s*['"]\/['"][\s\S]*?label:\s*['"]Articles['"]/,
     );
+  });
+
+  it("should have a gear icon link to /reindex", () => {
+    expect(layoutSrc).toContain('"/reindex"');
+    expect(layoutSrc).toContain("Settings");
+    expect(layoutSrc).toContain("<svg");
   });
 });
 
-describe("Search bar is wide and centered in top nav", () => {
-  it("search bar should have flex-1 or grow class for width", () => {
-    const combined = layoutSrc + searchBarSrc;
-    expect(combined).toMatch(/flex-1|grow/);
-  });
-
-  it("search bar input should have max-w class for controlled width", () => {
-    const combined = layoutSrc + searchBarSrc;
-    expect(combined).toMatch(/max-w-/);
-  });
-
-  it("search bar input should have aria-label", () => {
-    expect(searchBarSrc).toMatch(/aria-label/);
+describe("Nav should NOT have a search bar", () => {
+  it("should not import or render SearchBar", () => {
+    expect(layoutSrc).not.toContain("SearchBar");
   });
 });
 
@@ -104,18 +99,18 @@ describe("Nav and main content alignment", () => {
 });
 
 describe("Dark mode", () => {
-  it("should default to dark when no theme is set", () => {
-    expect(layoutSrc).toMatch(
-      /localStorage\.getItem\(['"]theme['"]\)\s*!==\s*['"]light['"]/,
-    );
-  });
-
-  it("should persist theme in localStorage on toggle", () => {
-    expect(layoutSrc).toMatch(/localStorage\.setItem\(['"]theme['"]/);
+  it("should always add dark class to document", () => {
+    expect(layoutSrc).toContain('classList.add("dark")');
   });
 
   it("should preserve dark mode across view transitions", () => {
     expect(layoutSrc).toContain("astro:before-swap");
+  });
+
+  it("should not have a theme toggle button", () => {
+    expect(layoutSrc).not.toContain("theme-toggle");
+    expect(layoutSrc).not.toContain("theme-icon-sun");
+    expect(layoutSrc).not.toContain("theme-icon-moon");
   });
 });
 

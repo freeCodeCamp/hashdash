@@ -2,3 +2,6 @@
 # See: https://developers.cloudflare.com/workers/configuration/secrets/
 
 HASHNODE_TOKEN=your-hashnode-personal-access-token
+WEBHOOK_SECRET=
+# Set to "true" to fetch from Hashnode API when D1 is empty (dev only)
+LIVE_MODE=

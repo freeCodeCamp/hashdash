@@ -1,3 +1,13 @@
+export type TagItem = { id: string; name: string; slug: string };
+type TagV2 = { __typename: string; id?: string; name?: string; slug?: string };
+
+export function normalizeTags(tagsV2: TagV2[] | undefined | null): TagItem[] {
+  if (!tagsV2) return [];
+  return tagsV2
+    .filter((t) => t.__typename === "Tag" && t.id && t.name && t.slug)
+    .map((t) => ({ id: t.id!, name: t.name!, slug: t.slug! }));
+}
+
 const CACHE_TTL = 300; // 5 minutes
 
 function buildCacheKey(
@@ -13,12 +23,13 @@ export function getClient(env: Env) {
     async query<T>(
       query: string,
       variables?: Record<string, unknown>,
+      options?: { skipCache?: boolean },
     ): Promise<T> {
       const cacheKey = buildCacheKey(query, variables);
       const cacheRequest = new Request(cacheKey);
 
       // Try cache first (only in production — caches API unavailable in dev)
-      if (typeof caches !== "undefined") {
+      if (!options?.skipCache && typeof caches !== "undefined") {
         const cache = caches.default;
         const cached = await cache.match(cacheRequest);
         if (cached) {
@@ -65,74 +76,6 @@ export function getClient(env: Env) {
   };
 }
 
-export const GET_PUBLICATION_POSTS = `
-  query GetPublicationPosts($host: String!, $first: Int!, $after: String) {
-    publication(host: $host) {
-      id
-      posts(first: $first, after: $after) {
-        totalDocuments
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-        edges {
-          node {
-            id
-            cuid
-            title
-            brief
-            slug
-            url
-            publishedAt
-            updatedAt
-            readTimeInMinutes
-            author {
-              name
-              username
-            }
-            coverImage {
-              url
-            }
-            tags {
-              id
-              name
-              slug
-            }
-          }
-        }
-      }
-    }
-  }
-`;
-
-export const SEARCH_POSTS = `
-  query SearchPosts($filter: SearchPostsOfPublicationFilter!, $first: Int!, $after: String) {
-    searchPostsOfPublication(filter: $filter, first: $first, after: $after) {
-      edges {
-        node {
-          id
-          title
-          brief
-          slug
-          url
-          publishedAt
-          author {
-            name
-            username
-          }
-          coverImage {
-            url
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
-`;
-
 export const GET_PUBLICATION_DRAFTS = `
   query GetPublicationDrafts($host: String!, $first: Int!, $after: String) {
     publication(host: $host) {
@@ -152,10 +95,13 @@ export const GET_PUBLICATION_DRAFTS = `
               name
               username
             }
-            tags {
-              id
-              name
-              slug
+            tagsV2 {
+              __typename
+              ... on Tag {
+                id
+                name
+                slug
+              }
             }
           }
         }
@@ -164,10 +110,10 @@ export const GET_PUBLICATION_DRAFTS = `
   }
 `;
 
-export const GET_MY_DRAFTS = `
-  query GetMyDrafts($first: Int!, $after: String) {
-    me {
-      drafts(first: $first, after: $after) {
+export const GET_SUBMITTED_DRAFTS = `
+  query GetSubmittedDrafts($host: String!, $first: Int!, $after: String) {
+    publication(host: $host) {
+      submittedDrafts(first: $first, after: $after) {
         totalDocuments
         pageInfo {
           hasNextPage
@@ -183,10 +129,103 @@ export const GET_MY_DRAFTS = `
               name
               username
             }
-            tags {
-              id
+            tagsV2 {
+              __typename
+              ... on Tag {
+                id
+                name
+                slug
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const GET_POST_BY_ID = `
+  query GetPostById($id: ID!) {
+    post(id: $id) {
+      id
+      cuid
+      title
+      slug
+      url
+      brief
+      publishedAt
+      updatedAt
+      readTimeInMinutes
+      author {
+        name
+        username
+      }
+      coverImage {
+        url
+      }
+      tags {
+        id
+        name
+        slug
+      }
+    }
+  }
+`;
+
+export const GET_SCHEDULED_DRAFTS = `
+  query GetScheduledDrafts($host: String!, $first: Int!, $after: String) {
+    publication(host: $host) {
+      scheduledDrafts(first: $first, after: $after) {
+        totalDocuments
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        edges {
+          node {
+            id
+            title
+            slug
+            updatedAt
+            scheduledDate
+            author {
               name
-              slug
+              username
+            }
+            tagsV2 {
+              __typename
+              ... on Tag {
+                id
+                name
+                slug
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+export const GET_ALL_DRAFTS_PAGE = `
+  query GetAllDraftsPage($host: String!, $first: Int!, $after: String) {
+    publication(host: $host) {
+      allDrafts(first: $first, after: $after) {
+        totalDocuments
+        pageInfo { hasNextPage endCursor }
+        edges {
+          node {
+            id
+            title
+            updatedAt
+            author { name username }
+            tagsV2 {
+              __typename
+              ... on Tag {
+                id
+                name
+                slug
+              }
             }
           }
         }

@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getClient } from "../lib/hashnode";
+
+const hashnodeSrc = readFileSync(
+  resolve(__dirname, "../lib/hashnode.ts"),
+  "utf-8",
+);
 
 const mockEnv = {
   HASHNODE_TOKEN: "test-token-123",
@@ -127,6 +134,24 @@ describe("getClient", () => {
     await expect(client.query("query { test }")).rejects.toThrow(
       "Network failure",
     );
+  });
+
+  it("should export GET_POST_BY_ID", () => {
+    expect(hashnodeSrc).toContain("export const GET_POST_BY_ID");
+  });
+
+  it("should query post by id in GET_POST_BY_ID", () => {
+    expect(hashnodeSrc).toMatch(/post\s*\(\s*id:\s*\$id\s*\)/);
+  });
+
+  it("should include all D1 fields in GET_POST_BY_ID", () => {
+    const queryStart = hashnodeSrc.indexOf("GET_POST_BY_ID");
+    const querySection = hashnodeSrc.slice(queryStart, queryStart + 500);
+    expect(querySection).toContain("cuid");
+    expect(querySection).toContain("readTimeInMinutes");
+    expect(querySection).toContain("author");
+    expect(querySection).toContain("coverImage");
+    expect(querySection).toContain("tags");
   });
 
   describe("caching", () => {

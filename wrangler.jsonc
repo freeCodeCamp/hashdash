@@ -1,27 +1,68 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "hashdash",
-  "main": "./dist/_worker.js/index.js",
-  "compatibility_date": "2026-02-20",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "assets": {
-    "binding": "ASSETS",
-    "directory": "./dist",
-  },
-  "routes": [
-    {
-      "pattern": "hashdash.freecodecamp.org",
-      "custom_domain": true,
-    },
-  ],
-  "observability": {
-    "enabled": true,
-    "head_sampling_rate": 1,
-  },
-  "vars": {
-    "HASHNODE_HOST": "freecodecamp.org/news",
-  },
-  // Secrets (set via `wrangler secret put`):
-  // - HASHNODE_TOKEN: Hashnode API auth token
-  //
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "hashdash",
+	"main": "./dist/_worker.js/index.js",
+	"compatibility_date": "2026-02-20",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	// Routing
+	"workers_dev": false,
+	"routes": [
+		{
+			"pattern": "hashdash.freecodecamp.org",
+			"custom_domain": true,
+		},
+	],
+	// Static assets
+	"assets": {
+		"binding": "ASSETS",
+		"directory": "./dist",
+	},
+	// Observability
+	"observability": {
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true,
+		},
+		"traces": {
+			"enabled": false,
+		},
+	},
+	"logpush": false,
+	// Runtime variables (plaintext)
+	"vars": {
+		"HASHNODE_HOST": "freecodecamp.org/news",
+	},
+	// D1 databases
+	"d1_databases": [
+		{
+			"binding": "POSTS_DB",
+			"database_name": "hashdash-posts",
+			"database_id": "4b2c6515-d444-45d5-b17e-ecf07a87a2f2",
+		},
+	],
+	// Durable Objects
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "POST_INDEXER",
+				"class_name": "PostIndexer",
+			},
+		],
+	},
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": [
+				"PostIndexer"
+			],
+		},
+	],
+	// Source maps for better error traces
+	"upload_source_maps": true,
+	// Secrets (set via `wrangler secret put`):
+	// - HASHNODE_TOKEN: Hashnode API auth token
+	// - WEBHOOK_SECRET: Hashnode webhook signing secret (whsec_...),
 }
