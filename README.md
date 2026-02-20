@@ -1,43 +1,40 @@
-# Astro Starter Kit: Minimal
+# hashdash
 
-```sh
-pnpm create astro@latest -- --template minimal
+A dashboard for managing [freeCodeCamp](https://freecodecamp.org/news) publications on Hashnode. View published posts, drafts, and search content — all from one place.
+
+Built with [Astro](https://astro.build) and deployed to [Cloudflare Workers](https://workers.cloudflare.com).
+
+## Setup
+
+```bash
+pnpm install
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+## Development
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
-
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
+```bash
+pnpm dev
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+Starts a local dev server at `localhost:4321` with Cloudflare platform proxy enabled.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+## Commands
 
-Any static assets, like images, can be placed in the `public/` directory.
+| Command              | Purpose                                 |
+| :------------------- | :-------------------------------------- |
+| `pnpm develop`       | Start local dev server                  |
+| `pnpm build`         | Production build to `./dist/`           |
+| `pnpm preview`       | Build + local preview via Wrangler      |
+| `pnpm deploy:worker` | Build + deploy to Cloudflare Workers    |
+| `pnpm test`          | Run tests (Vitest)                      |
+| `pnpm check`         | Type-check Astro and TypeScript files   |
+| `pnpm lint`          | Lint with oxlint                        |
+| `pnpm format`        | Format with Prettier                    |
+| `pnpm format:check`  | Check formatting without writing        |
+| `pnpm cf-typegen`    | Regenerate types from Wrangler bindings |
 
-## 🧞 Commands
+## Deployment
 
-All commands are run from the root of the project, from a terminal:
-
-| Command                | Action                                           |
-| :--------------------- | :----------------------------------------------- |
-| `pnpm install`         | Installs dependencies                            |
-| `pnpm dev`             | Starts local dev server at `localhost:4321`      |
-| `pnpm build`           | Build your production site to `./dist/`          |
-| `pnpm preview`         | Preview your build locally, before deploying     |
-| `pnpm astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `pnpm astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+1. Authenticate with Cloudflare: `pnpm wrangler login`
+2. Set the Hashnode API token: `pnpm wrangler secret put HASHNODE_TOKEN`
+3. Deploy: `pnpm deploy:worker`
