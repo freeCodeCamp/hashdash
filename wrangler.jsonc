@@ -31,6 +31,10 @@
 		},
 	},
 	"logpush": false,
+	// Raise subrequest cap for bulk indexing (each D1 upsert counts)
+	"limits": {
+		"subrequests": 50000,
+	},
 	// Runtime variables (plaintext)
 	"vars": {
 		"HASHNODE_HOST": "freecodecamp.org/news",

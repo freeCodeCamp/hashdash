@@ -408,22 +408,25 @@ const tabs = [
             </div>
             <div
               data-author-dropdown
+              role="listbox"
               style="scrollbar-width: none;"
               class="absolute z-10 mt-1 hidden max-h-60 w-full overflow-y-auto border border-gray-600 bg-gray-800 shadow-lg [&::-webkit-scrollbar]:hidden"
             >
               <div
                 data-author-option
+                role="option"
                 data-username=""
-                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-700"
+                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-600"
               >
                 All authors
               </div>
               {authors.map((a) => (
                 <div
                   data-author-option
+                  role="option"
                   data-username={a.author_username}
                   data-label={`${a.author_name} (@${a.author_username})`}
-                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-700"
+                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-600"
                 >
                   {a.author_name}{" "}
                   <span class="text-gray-400">@{a.author_username}</span>
@@ -593,22 +596,25 @@ const tabs = [
             </div>
             <div
               data-author-dropdown
+              role="listbox"
               style="scrollbar-width: none;"
               class="absolute z-10 mt-1 hidden max-h-60 w-full overflow-y-auto border border-gray-600 bg-gray-800 shadow-lg [&::-webkit-scrollbar]:hidden"
             >
               <div
                 data-author-option
+                role="option"
                 data-username=""
-                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-700"
+                class="cursor-pointer px-3 py-2 text-sm text-gray-500 hover:bg-gray-600"
               >
                 All authors
               </div>
               {draftsAuthors.map((a) => (
                 <div
                   data-author-option
+                  role="option"
                   data-username={a.author_username}
                   data-label={`${a.author_name} (@${a.author_username})`}
-                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-700"
+                  class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-600"
                 >
                   {a.author_name}{" "}
                   <span class="text-gray-400">@{a.author_username}</span>
@@ -805,32 +811,90 @@ const tabs = [
           }
         }
 
+        var activeIndex = -1;
+
+        function getVisibleOptions() {
+          var visible = [];
+          for (var i = 0; i < options.length; i++) {
+            if (options[i].style.display !== "none") visible.push(options[i]);
+          }
+          return visible;
+        }
+
+        function clearHighlight() {
+          for (var i = 0; i < options.length; i++) {
+            options[i].classList.remove("bg-gray-700");
+          }
+        }
+
+        function highlightOption(visibleOpts, idx) {
+          clearHighlight();
+          if (idx >= 0 && idx < visibleOpts.length) {
+            visibleOpts[idx].classList.add("bg-gray-700");
+            visibleOpts[idx].scrollIntoView({ block: "nearest" });
+          }
+        }
+
+        function selectOption(opt) {
+          var username = opt.getAttribute("data-username");
+          var label = opt.getAttribute("data-label") || "";
+          hidden.value = username;
+          input.value = username ? label : "";
+          activeIndex = -1;
+          clearHighlight();
+          hideDropdown();
+        }
+
         input.addEventListener("focus", function () {
+          activeIndex = -1;
           filterOptions();
         });
 
         input.addEventListener("input", function () {
           hidden.value = "";
+          activeIndex = -1;
           filterOptions();
         });
 
         for (var i = 0; i < options.length; i++) {
           options[i].addEventListener("mousedown", function (e) {
             e.preventDefault();
-            var username = this.getAttribute("data-username");
-            var label = this.getAttribute("data-label") || "";
-            hidden.value = username;
-            input.value = username ? label : "";
-            hideDropdown();
+            selectOption(this);
           });
         }
 
         input.addEventListener("blur", function () {
-          setTimeout(hideDropdown, 150);
+          setTimeout(function () {
+            activeIndex = -1;
+            clearHighlight();
+            hideDropdown();
+          }, 150);
         });
 
         input.addEventListener("keydown", function (e) {
-          if (e.key === "Escape") {
+          var visible = getVisibleOptions();
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (dropdown.classList.contains("hidden")) {
+              filterOptions();
+            }
+            activeIndex = activeIndex < visible.length - 1 ? activeIndex + 1 : 0;
+            highlightOption(visible, activeIndex);
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (dropdown.classList.contains("hidden")) {
+              filterOptions();
+            }
+            activeIndex = activeIndex > 0 ? activeIndex - 1 : visible.length - 1;
+            highlightOption(visible, activeIndex);
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (activeIndex >= 0 && activeIndex < visible.length) {
+              selectOption(visible[activeIndex]);
+            }
+          } else if (e.key === "Escape") {
+            activeIndex = -1;
+            clearHighlight();
             hideDropdown();
             input.blur();
           }
