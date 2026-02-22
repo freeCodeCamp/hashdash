@@ -18,6 +18,12 @@ interface IndexerState {
   warning: string | null;
 }
 
+interface ChunkState {
+  cursor: string | null;
+  seenPostIds: string[];
+  seenDraftIds: string[];
+}
+
 const DEFAULT_STATE: IndexerState = {
   status: "idle",
   phase: "posts",
@@ -35,7 +41,8 @@ const DEFAULT_STATE: IndexerState = {
 };
 
 const PAGE_SIZE = 50;
-const DELAY_MS = 200;
+const DELAY_MS = 50;
+const PAGES_PER_ALARM = 15;
 
 const RETRY_DELAYS = [1000, 2000, 4000];
 
@@ -96,7 +103,6 @@ const GET_POSTS_PAGE = `
 
 export class PostIndexer extends DurableObject<Env> {
   private state: IndexerState = { ...DEFAULT_STATE };
-  private aborted = false;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -111,6 +117,7 @@ export class PostIndexer extends DurableObject<Env> {
           stored.error = "Interrupted — restart indexing";
           stored.completedAt = new Date().toISOString();
           await this.ctx.storage.put("state", stored);
+          await this.ctx.storage.delete("chunk");
         }
         this.state = stored;
       }
@@ -186,22 +193,30 @@ export class PostIndexer extends DurableObject<Env> {
         );
         return;
       }
-      this.aborted = false;
       this.state = { ...DEFAULT_STATE };
       await this.saveState({
         status: "running",
         startedAt: new Date().toISOString(),
       });
+      await this.ctx.storage.delete("chunk");
       this.broadcast();
-      this.ctx.waitUntil(this.runIndex());
+      await this.ctx.storage.setAlarm(Date.now());
     } else if (data.action === "cancel") {
       if (this.state.status === "running") {
-        this.aborted = true;
+        await this.saveState({
+          status: "failed",
+          error: "Cancelled by user",
+          completedAt: new Date().toISOString(),
+        });
+        await this.ctx.storage.deleteAlarm();
+        await this.ctx.storage.delete("chunk");
+        this.broadcast();
       }
     } else if (data.action === "reset") {
-      this.aborted = true;
       this.state = { ...DEFAULT_STATE };
       await this.ctx.storage.put("state", { ...DEFAULT_STATE });
+      await this.ctx.storage.deleteAlarm();
+      await this.ctx.storage.delete("chunk");
       this.broadcast();
     }
   }
@@ -216,6 +231,275 @@ export class PostIndexer extends DurableObject<Env> {
       ws.close(code, reason);
     } catch {
       ws.close();
+    }
+  }
+
+  async alarm(): Promise<void> {
+    if (this.state.status !== "running") return;
+
+    let chunk = await this.ctx.storage.get<ChunkState>("chunk");
+    if (!chunk) {
+      chunk = { cursor: null, seenPostIds: [], seenDraftIds: [] };
+    }
+
+    try {
+      switch (this.state.phase) {
+        case "posts":
+          await this.processPostsChunk(chunk);
+          break;
+        case "purge-posts": {
+          const db = this.env.POSTS_DB;
+          await this.purgeStale(db, "posts", new Set(chunk.seenPostIds));
+          await this.saveState({ phase: "drafts", processed: 0, total: 0 });
+          chunk.cursor = null;
+          await this.ctx.storage.put("chunk", chunk);
+          this.broadcast();
+          await this.ctx.storage.setAlarm(Date.now());
+          break;
+        }
+        case "drafts":
+          await this.processDraftsChunk(chunk);
+          break;
+        case "purge-drafts": {
+          const db = this.env.POSTS_DB;
+          await this.purgeStale(db, "drafts", new Set(chunk.seenDraftIds));
+          await this.saveState({
+            status: "completed",
+            completedAt: new Date().toISOString(),
+          });
+          await this.ctx.storage.delete("chunk");
+          this.broadcast();
+          break;
+        }
+      }
+    } catch (e) {
+      await this.saveState({
+        status: "failed",
+        error: e instanceof Error ? e.message : String(e),
+        completedAt: new Date().toISOString(),
+      });
+      await this.ctx.storage.delete("chunk");
+      this.broadcast();
+    }
+  }
+
+  private async processPostsChunk(chunk: ChunkState): Promise<void> {
+    const db = this.env.POSTS_DB;
+    let cursor = chunk.cursor ?? undefined;
+    let hasNextPage = true;
+    let processed = this.state.postsSynced;
+
+    let page = 0;
+    while (page < PAGES_PER_ALARM && hasNextPage) {
+      if (this.state.status !== "running") return;
+
+      const response = await fetchWithRetry("https://gql.hashnode.com/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: this.env.HASHNODE_TOKEN,
+        },
+        body: JSON.stringify({
+          query: GET_POSTS_PAGE,
+          variables: {
+            host: this.env.HASHNODE_HOST,
+            first: PAGE_SIZE,
+            after: cursor,
+          },
+        }),
+      });
+
+      const json = (await response.json()) as {
+        data: {
+          publication: {
+            posts: {
+              totalDocuments: number;
+              pageInfo: { hasNextPage: boolean; endCursor: string };
+              edges: Array<{ node: Record<string, unknown> }>;
+            };
+          };
+        };
+        errors?: unknown[];
+      };
+
+      if (json.errors) {
+        throw new Error(`GraphQL error: ${JSON.stringify(json.errors)}`);
+      }
+
+      const { totalDocuments, pageInfo, edges } = json.data.publication.posts;
+
+      if (processed === 0 && page === 0) {
+        await this.saveState({
+          total: totalDocuments,
+          postsTotal: totalDocuments,
+        });
+      }
+
+      const batch = edges.map(({ node }: { node: Record<string, unknown> }) => {
+        chunk.seenPostIds.push(node.id as string);
+        const author = node.author as {
+          name: string;
+          username: string;
+        } | null;
+        const coverImage = node.coverImage as { url: string } | null;
+        const tags = node.tags as Array<{
+          id: string;
+          name: string;
+          slug: string;
+        }>;
+        return upsertPost(db, {
+          id: node.id as string,
+          cuid: node.cuid as string,
+          title: node.title as string,
+          slug: node.slug as string,
+          url: node.url as string,
+          brief: (node.brief as string) ?? null,
+          author_name: author?.name ?? "Unknown",
+          author_username: author?.username ?? "unknown",
+          published_at: node.publishedAt as string,
+          updated_at: (node.updatedAt as string) ?? null,
+          read_time: (node.readTimeInMinutes as number) ?? null,
+          cover_image_url: coverImage?.url ?? null,
+          tags: JSON.stringify(tags ?? []),
+        });
+      });
+
+      await db.batch(batch);
+      processed += edges.length;
+
+      hasNextPage = pageInfo.hasNextPage;
+      cursor = pageInfo.endCursor;
+
+      await this.saveState({ processed, postsSynced: processed });
+      this.broadcast();
+
+      page++;
+      if (hasNextPage && page < PAGES_PER_ALARM) {
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+      }
+    }
+
+    chunk.cursor = cursor ?? null;
+    await this.ctx.storage.put("chunk", chunk);
+
+    if (hasNextPage) {
+      // More posts pages remain — schedule next alarm chunk
+      await this.ctx.storage.setAlarm(Date.now());
+    } else {
+      // Posts done — advance to purge-posts phase
+      await this.saveState({ phase: "purge-posts" });
+      await this.ctx.storage.setAlarm(Date.now());
+    }
+  }
+
+  private async processDraftsChunk(chunk: ChunkState): Promise<void> {
+    const db = this.env.POSTS_DB;
+    let cursor = chunk.cursor ?? undefined;
+    let hasNextPage = true;
+    let processed = this.state.draftsSynced;
+
+    let page = 0;
+    while (page < PAGES_PER_ALARM && hasNextPage) {
+      if (this.state.status !== "running") return;
+
+      const draftResponse = await fetchWithRetry("https://gql.hashnode.com/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: this.env.HASHNODE_TOKEN,
+        },
+        body: JSON.stringify({
+          query: GET_ALL_DRAFTS_PAGE,
+          variables: {
+            host: this.env.HASHNODE_HOST,
+            first: PAGE_SIZE,
+            after: cursor,
+          },
+        }),
+      });
+
+      const draftJson = (await draftResponse.json()) as {
+        data: {
+          publication: {
+            allDrafts: {
+              totalDocuments: number;
+              pageInfo: { hasNextPage: boolean; endCursor: string };
+              edges: Array<{ node: Record<string, unknown> }>;
+            };
+          };
+        };
+        errors?: unknown[];
+      };
+
+      if (draftJson.errors) {
+        throw new Error(`GraphQL error: ${JSON.stringify(draftJson.errors)}`);
+      }
+
+      const {
+        totalDocuments: draftTotal,
+        pageInfo: draftPageInfo,
+        edges: draftEdges,
+      } = draftJson.data.publication.allDrafts;
+
+      if (processed === 0 && page === 0) {
+        await this.saveState({ total: draftTotal, draftsTotal: draftTotal });
+      }
+
+      const draftBatch = draftEdges.map(
+        ({ node }: { node: Record<string, unknown> }) => {
+          chunk.seenDraftIds.push(node.id as string);
+          const author = node.author as {
+            name: string;
+            username: string;
+          } | null;
+          return upsertDraft(db, {
+            id: node.id as string,
+            title: (node.title as string) ?? "",
+            author_name: author?.name ?? "Unknown",
+            author_username: author?.username ?? "unknown",
+            updated_at: node.updatedAt as string,
+            tags: JSON.stringify(
+              normalizeTags(
+                node.tagsV2 as Array<{
+                  __typename: string;
+                  id?: string;
+                  name?: string;
+                  slug?: string;
+                }>,
+              ),
+            ),
+          });
+        },
+      );
+
+      await db.batch(draftBatch);
+      processed += draftEdges.length;
+
+      hasNextPage = draftPageInfo.hasNextPage;
+      cursor = draftPageInfo.endCursor;
+
+      await this.saveState({
+        processed,
+        draftsSynced: processed,
+      });
+      this.broadcast();
+
+      page++;
+      if (hasNextPage && page < PAGES_PER_ALARM) {
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+      }
+    }
+
+    chunk.cursor = cursor ?? null;
+    await this.ctx.storage.put("chunk", chunk);
+
+    if (hasNextPage) {
+      // More draft pages remain — schedule next alarm chunk
+      await this.ctx.storage.setAlarm(Date.now());
+    } else {
+      // Drafts done — advance to purge-drafts phase
+      await this.saveState({ phase: "purge-drafts" });
+      await this.ctx.storage.setAlarm(Date.now());
     }
   }
 
@@ -260,243 +544,6 @@ export class PostIndexer extends DurableObject<Env> {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await this.saveState({ warning: `Purge ${table} failed: ${msg}` });
-      this.broadcast();
-    }
-  }
-
-  private async runIndex(): Promise<void> {
-    try {
-      const db = this.env.POSTS_DB;
-
-      await this.saveState({ phase: "posts" });
-
-      let cursor: string | undefined;
-      let hasNextPage = true;
-      let processed = 0;
-      const seenPostIds = new Set<string>();
-
-      while (hasNextPage) {
-        if (this.aborted) {
-          await this.saveState({
-            status: "failed",
-            error: "Cancelled by user",
-            completedAt: new Date().toISOString(),
-          });
-          this.broadcast();
-          return;
-        }
-
-        const response = await fetchWithRetry("https://gql.hashnode.com/", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: this.env.HASHNODE_TOKEN,
-          },
-          body: JSON.stringify({
-            query: GET_POSTS_PAGE,
-            variables: {
-              host: this.env.HASHNODE_HOST,
-              first: PAGE_SIZE,
-              after: cursor,
-            },
-          }),
-        });
-
-        const json = (await response.json()) as {
-          data: {
-            publication: {
-              posts: {
-                totalDocuments: number;
-                pageInfo: { hasNextPage: boolean; endCursor: string };
-                edges: Array<{ node: Record<string, unknown> }>;
-              };
-            };
-          };
-          errors?: unknown[];
-        };
-
-        if (json.errors) {
-          throw new Error(`GraphQL error: ${JSON.stringify(json.errors)}`);
-        }
-
-        const { totalDocuments, pageInfo, edges } = json.data.publication.posts;
-
-        if (processed === 0) {
-          await this.saveState({
-            total: totalDocuments,
-            postsTotal: totalDocuments,
-          });
-        }
-
-        const batch = edges.map(
-          ({ node }: { node: Record<string, unknown> }) => {
-            seenPostIds.add(node.id as string);
-            const author = node.author as {
-              name: string;
-              username: string;
-            } | null;
-            const coverImage = node.coverImage as { url: string } | null;
-            const tags = node.tags as Array<{
-              id: string;
-              name: string;
-              slug: string;
-            }>;
-            return upsertPost(db, {
-              id: node.id as string,
-              cuid: node.cuid as string,
-              title: node.title as string,
-              slug: node.slug as string,
-              url: node.url as string,
-              brief: (node.brief as string) ?? null,
-              author_name: author?.name ?? "Unknown",
-              author_username: author?.username ?? "unknown",
-              published_at: node.publishedAt as string,
-              updated_at: (node.updatedAt as string) ?? null,
-              read_time: (node.readTimeInMinutes as number) ?? null,
-              cover_image_url: coverImage?.url ?? null,
-              tags: JSON.stringify(tags ?? []),
-            });
-          },
-        );
-
-        await db.batch(batch);
-        processed += edges.length;
-
-        hasNextPage = pageInfo.hasNextPage;
-        cursor = pageInfo.endCursor;
-
-        await this.saveState({ processed, postsSynced: processed });
-        this.broadcast();
-
-        if (hasNextPage) {
-          await new Promise((r) => setTimeout(r, DELAY_MS));
-        }
-      }
-
-      await this.purgeStale(db, "posts", seenPostIds);
-
-      await this.saveState({ phase: "drafts", processed: 0, total: 0 });
-      this.broadcast();
-
-      let draftCursor: string | undefined;
-      let hasDraftsNextPage = true;
-      let draftsProcessed = 0;
-      const seenDraftIds = new Set<string>();
-
-      while (hasDraftsNextPage) {
-        if (this.aborted) {
-          await this.saveState({
-            status: "failed",
-            error: "Cancelled by user",
-            completedAt: new Date().toISOString(),
-          });
-          this.broadcast();
-          return;
-        }
-
-        const draftResponse = await fetchWithRetry(
-          "https://gql.hashnode.com/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: this.env.HASHNODE_TOKEN,
-            },
-            body: JSON.stringify({
-              query: GET_ALL_DRAFTS_PAGE,
-              variables: {
-                host: this.env.HASHNODE_HOST,
-                first: PAGE_SIZE,
-                after: draftCursor,
-              },
-            }),
-          },
-        );
-
-        const draftJson = (await draftResponse.json()) as {
-          data: {
-            publication: {
-              allDrafts: {
-                totalDocuments: number;
-                pageInfo: { hasNextPage: boolean; endCursor: string };
-                edges: Array<{ node: Record<string, unknown> }>;
-              };
-            };
-          };
-          errors?: unknown[];
-        };
-
-        if (draftJson.errors) {
-          throw new Error(`GraphQL error: ${JSON.stringify(draftJson.errors)}`);
-        }
-
-        const {
-          totalDocuments: draftTotal,
-          pageInfo: draftPageInfo,
-          edges: draftEdges,
-        } = draftJson.data.publication.allDrafts;
-
-        if (draftsProcessed === 0) {
-          await this.saveState({ total: draftTotal, draftsTotal: draftTotal });
-        }
-
-        const draftBatch = draftEdges.map(
-          ({ node }: { node: Record<string, unknown> }) => {
-            seenDraftIds.add(node.id as string);
-            const author = node.author as {
-              name: string;
-              username: string;
-            } | null;
-            return upsertDraft(db, {
-              id: node.id as string,
-              title: (node.title as string) ?? "",
-              author_name: author?.name ?? "Unknown",
-              author_username: author?.username ?? "unknown",
-              updated_at: node.updatedAt as string,
-              tags: JSON.stringify(
-                normalizeTags(
-                  node.tagsV2 as Array<{
-                    __typename: string;
-                    id?: string;
-                    name?: string;
-                    slug?: string;
-                  }>,
-                ),
-              ),
-            });
-          },
-        );
-
-        await db.batch(draftBatch);
-        draftsProcessed += draftEdges.length;
-
-        hasDraftsNextPage = draftPageInfo.hasNextPage;
-        draftCursor = draftPageInfo.endCursor;
-
-        await this.saveState({
-          processed: draftsProcessed,
-          draftsSynced: draftsProcessed,
-        });
-        this.broadcast();
-
-        if (hasDraftsNextPage) {
-          await new Promise((r) => setTimeout(r, DELAY_MS));
-        }
-      }
-
-      await this.purgeStale(db, "drafts", seenDraftIds);
-
-      await this.saveState({
-        status: "completed",
-        completedAt: new Date().toISOString(),
-      });
-      this.broadcast();
-    } catch (e) {
-      await this.saveState({
-        status: "failed",
-        error: e instanceof Error ? e.message : String(e),
-        completedAt: new Date().toISOString(),
-      });
       this.broadcast();
     }
   }

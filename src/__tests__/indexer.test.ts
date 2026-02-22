@@ -37,12 +37,12 @@ describe("PostIndexer Durable Object", () => {
 
   it("should handle start action", () => {
     expect(indexerSrc).toMatch(/action.*start/);
-    expect(indexerSrc).toContain("runIndex");
+    expect(indexerSrc).toContain("setAlarm");
   });
 
-  it("should handle cancel action with aborted flag", () => {
+  it("should handle cancel action with status update and deleteAlarm", () => {
     expect(indexerSrc).toMatch(/action.*cancel/);
-    expect(indexerSrc).toContain("aborted");
+    expect(indexerSrc).toContain("deleteAlarm");
   });
 
   it("should handle reset action", () => {
@@ -55,12 +55,12 @@ describe("PostIndexer Durable Object", () => {
     expect(indexerSrc).toContain("getWebSockets");
   });
 
-  it("should broadcast progress during runIndex", () => {
-    expect(indexerSrc).toMatch(/runIndex[\s\S]*broadcast/);
+  it("should broadcast progress during processPostsChunk", () => {
+    expect(indexerSrc).toMatch(/processPostsChunk[\s\S]*broadcast/);
   });
 
-  it("should check aborted flag between batches", () => {
-    expect(indexerSrc).toMatch(/while[\s\S]*aborted/);
+  it("should check status between batches for cancellation", () => {
+    expect(indexerSrc).toMatch(/status.*!==.*"running"/);
   });
 
   it("should use upsertPost from shared db helpers", () => {
@@ -123,6 +123,37 @@ describe("PostIndexer Durable Object", () => {
   it("should track seen IDs for stale purge", () => {
     expect(indexerSrc).toContain("seenPostIds");
     expect(indexerSrc).toContain("seenDraftIds");
+  });
+
+  it("should have alarm method for chunked processing", () => {
+    expect(indexerSrc).toMatch(/async alarm\(\)/);
+  });
+
+  it("should use setAlarm to schedule next chunk", () => {
+    expect(indexerSrc).toContain("setAlarm");
+  });
+
+  it("should use deleteAlarm on cancel and reset", () => {
+    expect(indexerSrc).toContain("deleteAlarm");
+  });
+
+  it("should define PAGES_PER_ALARM constant", () => {
+    expect(indexerSrc).toContain("PAGES_PER_ALARM");
+  });
+
+  it("should persist chunk state in storage", () => {
+    expect(indexerSrc).toContain("ChunkState");
+    expect(indexerSrc).toContain('storage.get<ChunkState>("chunk")');
+    expect(indexerSrc).toContain('storage.put("chunk"');
+    expect(indexerSrc).toContain('storage.delete("chunk")');
+  });
+
+  it("should have processPostsChunk method", () => {
+    expect(indexerSrc).toContain("processPostsChunk");
+  });
+
+  it("should have processDraftsChunk method", () => {
+    expect(indexerSrc).toContain("processDraftsChunk");
   });
 
   it("should have warning field in IndexerState", () => {
