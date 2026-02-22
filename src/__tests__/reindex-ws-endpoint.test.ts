@@ -20,3 +20,19 @@ describe("WebSocket routing in worker.ts", () => {
     expect(workerSrc).toContain("handle(");
   });
 });
+
+describe("HTTP status endpoint in worker.ts", () => {
+  it("should intercept GET /api/reindex/status", () => {
+    expect(workerSrc).toContain("/api/reindex/status");
+    expect(workerSrc).toContain("GET");
+  });
+
+  it("should call getStatus() via DO RPC", () => {
+    expect(workerSrc).toMatch(/stub\.getStatus\(\)/);
+  });
+
+  it("should return JSON with status field", () => {
+    expect(workerSrc).toContain("application/json");
+    expect(workerSrc).toMatch(/status:\s*state\.status/);
+  });
+});

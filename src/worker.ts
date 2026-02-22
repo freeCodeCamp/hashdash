@@ -17,6 +17,17 @@ export function createExports(manifest: SSRManifest) {
           const stub = env.POST_INDEXER.get(id);
           return stub.fetch(request);
         }
+        if (
+          url.pathname === "/api/reindex/status" &&
+          request.method === "GET"
+        ) {
+          const id = env.POST_INDEXER.idFromName("singleton");
+          const stub = env.POST_INDEXER.get(id);
+          const state = await stub.getStatus();
+          return new Response(JSON.stringify({ status: state.status }), {
+            headers: { "Content-Type": "application/json" },
+          });
+        }
         // @ts-expect-error astro cloudflare handler type mismatch
         return handle(manifest, app, request, env, ctx);
       },

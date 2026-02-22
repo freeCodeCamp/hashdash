@@ -99,12 +99,9 @@ describe("Nav and main content alignment", () => {
 });
 
 describe("Dark mode", () => {
-  it("should always add dark class to document", () => {
-    expect(layoutSrc).toContain('classList.add("dark")');
-  });
-
-  it("should preserve dark mode across view transitions", () => {
-    expect(layoutSrc).toContain("astro:before-swap");
+  it("should have dark class set statically on html element", () => {
+    expect(layoutSrc).toMatch(/<html[^>]*class="[^"]*dark[^"]*"/);
+    expect(layoutSrc).not.toContain('classList.add("dark")');
   });
 
   it("should not have a theme toggle button", () => {
@@ -121,13 +118,9 @@ describe("SEO and privacy", () => {
 });
 
 describe("View transitions", () => {
-  it("should import ClientRouter from astro:transitions", () => {
-    expect(layoutSrc).toContain("astro:transitions");
-    expect(layoutSrc).toContain("ClientRouter");
-  });
-
-  it("should render <ClientRouter /> in head", () => {
-    expect(layoutSrc).toMatch(/<ClientRouter\s*\/>/);
+  it("should not use ClientRouter", () => {
+    expect(layoutSrc).not.toContain("astro:transitions");
+    expect(layoutSrc).not.toContain("ClientRouter");
   });
 });
 

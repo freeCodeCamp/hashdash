@@ -13,8 +13,26 @@
 }
 
 @layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+
+  astro-island {
+    display: contents;
+  }
+
   body {
     @apply text-base;
     font-size: 16px;
+  }
+
+  main {
+    animation: fade-in 0.15s ease-out;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
   }
 }

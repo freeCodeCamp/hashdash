@@ -1,7 +1,11 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import PostCard from "../components/PostCard.astro";
-import { getClient, GET_SCHEDULED_DRAFTS, normalizeTags } from "../lib/hashnode";
+import {
+  getClient,
+  GET_SCHEDULED_DRAFTS,
+  normalizeTags,
+} from "../lib/hashnode";
 import type { PostRow, DraftRow } from "../lib/db";
 
 const PAGE_SIZE = 50;
@@ -61,14 +65,18 @@ const schedPage = Math.max(
 );
 
 const client = getClient(env);
-const [d1PostsCount, d1DraftsCount, schedCountResult] = await Promise.allSettled([
-  db.prepare("SELECT COUNT(*) as count FROM posts").first<{ count: number }>(),
-  db.prepare("SELECT COUNT(*) as count FROM drafts").first<{ count: number }>(),
-  client.query<{ publication: { scheduledDrafts: { totalDocuments: number } } }>(
-    GET_SCHEDULED_DRAFTS,
-    { host: env.HASHNODE_HOST, first: 1 },
-  ),
-]);
+const [d1PostsCount, d1DraftsCount, schedCountResult] =
+  await Promise.allSettled([
+    db
+      .prepare("SELECT COUNT(*) as count FROM posts")
+      .first<{ count: number }>(),
+    db
+      .prepare("SELECT COUNT(*) as count FROM drafts")
+      .first<{ count: number }>(),
+    client.query<{
+      publication: { scheduledDrafts: { totalDocuments: number } };
+    }>(GET_SCHEDULED_DRAFTS, { host: env.HASHNODE_HOST, first: 1 }),
+  ]);
 
 if (d1PostsCount.status === "fulfilled" && d1PostsCount.value) {
   publishedTotal = d1PostsCount.value.count;
@@ -77,7 +85,8 @@ if (d1DraftsCount.status === "fulfilled" && d1DraftsCount.value) {
   draftsTotal = d1DraftsCount.value.count;
 }
 if (schedCountResult.status === "fulfilled") {
-  scheduledTotal = schedCountResult.value.publication.scheduledDrafts.totalDocuments;
+  scheduledTotal =
+    schedCountResult.value.publication.scheduledDrafts.totalDocuments;
 }
 
 if (tab === "published") {
@@ -195,7 +204,8 @@ if (tab === "scheduled") {
     schedHasNextPage = sched.pageInfo.hasNextPage;
     schedEndCursor = sched.pageInfo.endCursor;
   } catch (e) {
-    fetchError = e instanceof Error ? e.message : "Failed to load scheduled posts.";
+    fetchError =
+      e instanceof Error ? e.message : "Failed to load scheduled posts.";
   }
 }
 
@@ -721,7 +731,8 @@ const tabs = [
               />
               {node.scheduledDate && (
                 <div class="mt-1 ml-4 text-sm text-yellow-400">
-                  Scheduled: {new Date(node.scheduledDate).toLocaleDateString("en-US", {
+                  Scheduled:{" "}
+                  {new Date(node.scheduledDate).toLocaleDateString("en-US", {
                     month: "short",
                     day: "numeric",
                     year: "numeric",
@@ -878,14 +889,16 @@ const tabs = [
             if (dropdown.classList.contains("hidden")) {
               filterOptions();
             }
-            activeIndex = activeIndex < visible.length - 1 ? activeIndex + 1 : 0;
+            activeIndex =
+              activeIndex < visible.length - 1 ? activeIndex + 1 : 0;
             highlightOption(visible, activeIndex);
           } else if (e.key === "ArrowUp") {
             e.preventDefault();
             if (dropdown.classList.contains("hidden")) {
               filterOptions();
             }
-            activeIndex = activeIndex > 0 ? activeIndex - 1 : visible.length - 1;
+            activeIndex =
+              activeIndex > 0 ? activeIndex - 1 : visible.length - 1;
             highlightOption(visible, activeIndex);
           } else if (e.key === "Enter") {
             e.preventDefault();
