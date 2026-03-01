@@ -27,16 +27,18 @@ describe("PostCard action URLs", () => {
 
 describe("PostCard icon buttons", () => {
   it("should have a preview button with document-search icon for all cards", () => {
-    expect(cardSrc).toContain('aria-label="Preview"');
+    expect(cardSrc).toContain('aria-label="Preview (opens in new tab)"');
   });
 
-  it("should have a visit button with external-link icon for posts", () => {
-    expect(cardSrc).toContain('aria-label="Visit article"');
+  it("should have a visit button with eye icon for posts", () => {
+    expect(cardSrc).toContain('aria-label="Visit article (opens in new tab)"');
     expect(cardSrc).toContain("{visitUrl && (");
   });
 
   it("should have an edit button for all cards", () => {
-    expect(cardSrc).toContain('aria-label="Edit on Hashnode"');
+    expect(cardSrc).toContain(
+      'aria-label="Edit on Hashnode (opens in new tab)"',
+    );
   });
 
   it("should use data-card-action attribute on all action links", () => {
@@ -66,6 +68,38 @@ describe("PostCard details table", () => {
   it("should always show Edit row", () => {
     const editRowMatch = cardSrc.match(/<td[^>]*>[\s\n]*Edit[\s\n]*<\/td>/);
     expect(editRowMatch).not.toBeNull();
+  });
+});
+
+describe("PostCard accessibility", () => {
+  it("should hide decorative SVGs from assistive technology", () => {
+    const svgCount = (cardSrc.match(/<svg/g) || []).length;
+    const ariaHiddenCount = (cardSrc.match(/aria-hidden="true"/g) || []).length;
+    expect(ariaHiddenCount).toBeGreaterThanOrEqual(svgCount);
+  });
+
+  it("should have focus-visible ring on action buttons", () => {
+    expect(cardSrc).toContain("focus-visible:ring-2");
+    expect(cardSrc).toContain("focus-visible:ring-blue-400");
+  });
+
+  it("should have focus-visible ring on card toggle", () => {
+    expect(cardSrc).toMatch(/data-card-toggle[\s\S]*?focus-visible:ring-2/);
+  });
+
+  it("should hide decorative middot separators from AT", () => {
+    expect(cardSrc).toContain('aria-hidden="true">&middot;</span>');
+    expect(cardSrc).not.toMatch(
+      /<span[^>]*class="mx-1\.5"[^>]*(?<!aria-hidden="true")>&middot;/,
+    );
+  });
+
+  it("should indicate new tab in aria-labels for external links", () => {
+    expect(cardSrc).toContain("opens in new tab");
+  });
+
+  it("should have aria-expanded on card toggle", () => {
+    expect(cardSrc).toContain('aria-expanded="false"');
   });
 });
 

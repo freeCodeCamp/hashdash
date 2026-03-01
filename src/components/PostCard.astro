@@ -65,7 +65,7 @@ const dateStr = date.toLocaleDateString("en-US", {
     tabindex="0"
     aria-expanded="false"
     data-card-toggle
-    class="flex cursor-pointer items-center justify-between gap-3 select-none"
+    class="flex cursor-pointer items-center justify-between gap-3 rounded select-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
   >
     <div class="min-w-0 flex-1">
       <h3 class="truncate text-base leading-tight font-semibold text-gray-100">
@@ -73,13 +73,13 @@ const dateStr = date.toLocaleDateString("en-US", {
       </h3>
       <p class="mt-1 truncate text-sm text-gray-500">
         {author}{username && <span class="text-gray-400"> @{username}</span>}
-        <span class="mx-1.5">&middot;</span>
+        <span class="mx-1.5" aria-hidden="true">&middot;</span>
         <time datetime={date.toISOString()}>{dateStr}</time>
         {
           readTimeInMinutes && (
             <>
               <>
-                <span class="mx-1.5">&middot;</span>
+                <span class="mx-1.5" aria-hidden="true">&middot;</span>
                 <span>{readTimeInMinutes} min</span>
               </>
             </>
@@ -94,8 +94,8 @@ const dateStr = date.toLocaleDateString("en-US", {
         target="_blank"
         rel="noopener noreferrer"
         data-card-action
-        class="p-2.5 text-gray-400 hover:text-gray-300"
-        aria-label="Preview"
+        class="rounded p-2.5 text-gray-400 hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+        aria-label="Preview (opens in new tab)"
         title="Preview"
       >
         <svg
@@ -104,6 +104,7 @@ const dateStr = date.toLocaleDateString("en-US", {
           viewBox="0 0 24 24"
           stroke-width="1.5"
           stroke="currentColor"
+          aria-hidden="true"
         >
           <path
             stroke-linecap="round"
@@ -119,8 +120,8 @@ const dateStr = date.toLocaleDateString("en-US", {
           target="_blank"
           rel="noopener noreferrer"
           data-card-action
-          class="p-2.5 text-gray-400 hover:text-gray-300"
-          aria-label="Visit article"
+          class="rounded p-2.5 text-gray-400 hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+          aria-label="Visit article (opens in new tab)"
           title="Visit article"
         >
           <svg
@@ -129,6 +130,7 @@ const dateStr = date.toLocaleDateString("en-US", {
             viewBox="0 0 24 24"
             stroke-width="1.5"
             stroke="currentColor"
+            aria-hidden="true"
           >
             <path
               stroke-linecap="round"
@@ -149,8 +151,8 @@ const dateStr = date.toLocaleDateString("en-US", {
         target="_blank"
         rel="noopener noreferrer"
         data-card-action
-        class="p-2.5 text-gray-400 hover:text-gray-300"
-        aria-label="Edit on Hashnode"
+        class="rounded p-2.5 text-gray-400 hover:text-gray-300 focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+        aria-label="Edit on Hashnode (opens in new tab)"
         title="Edit on Hashnode"
       >
         <svg
@@ -159,6 +161,7 @@ const dateStr = date.toLocaleDateString("en-US", {
           viewBox="0 0 24 24"
           stroke-width="1.5"
           stroke="currentColor"
+          aria-hidden="true"
         >
           <path
             stroke-linecap="round"
@@ -174,6 +177,7 @@ const dateStr = date.toLocaleDateString("en-US", {
         viewBox="0 0 24 24"
         stroke-width="2"
         stroke="currentColor"
+        aria-hidden="true"
       >
         <path
           stroke-linecap="round"
