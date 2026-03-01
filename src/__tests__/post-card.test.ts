@@ -8,10 +8,10 @@ const cardSrc = readFileSync(
 );
 
 describe("PostCard action URLs", () => {
-  it("should compute previewUrl for all cards using preview.freecodecamp.org", () => {
+  it("should compute previewUrl using id for all cards", () => {
     expect(cardSrc).toContain("preview.freecodecamp.org");
     expect(cardSrc).toMatch(
-      /previewUrl\s*=\s*`https:\/\/preview\.freecodecamp\.org/,
+      /previewUrl\s*=\s*`https:\/\/preview\.freecodecamp\.org\/\$\{id\}`/,
     );
   });
 
