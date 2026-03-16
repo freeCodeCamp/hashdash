@@ -145,6 +145,22 @@ export class PostIndexer extends DurableObject<Env> {
     }
   }
 
+  async startReindex(): Promise<{ started: boolean; status: string }> {
+    const current = await this.getStatus();
+    if (current.status === "running") {
+      return { started: false, status: "already_running" };
+    }
+    this.state = { ...DEFAULT_STATE };
+    await this.saveState({
+      status: "running",
+      startedAt: new Date().toISOString(),
+    });
+    await this.ctx.storage.delete("chunk");
+    this.broadcast();
+    await this.ctx.storage.setAlarm(Date.now());
+    return { started: true, status: "running" };
+  }
+
   async fetch(request: Request): Promise<Response> {
     const upgrade = request.headers.get("Upgrade");
     if (upgrade !== "websocket") {
@@ -182,8 +198,9 @@ export class PostIndexer extends DurableObject<Env> {
     }
 
     if (data.action === "start") {
-      const current = await this.getStatus();
-      if (current.status === "running") {
+      const result = await this.startReindex();
+      if (!result.started) {
+        const current = await this.getStatus();
         ws.send(
           JSON.stringify({
             type: "status",
@@ -191,16 +208,7 @@ export class PostIndexer extends DurableObject<Env> {
             error: "Reindex already in progress",
           }),
         );
-        return;
       }
-      this.state = { ...DEFAULT_STATE };
-      await this.saveState({
-        status: "running",
-        startedAt: new Date().toISOString(),
-      });
-      await this.ctx.storage.delete("chunk");
-      this.broadcast();
-      await this.ctx.storage.setAlarm(Date.now());
     } else if (data.action === "cancel") {
       if (this.state.status === "running") {
         await this.saveState({

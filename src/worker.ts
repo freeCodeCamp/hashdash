@@ -31,7 +31,21 @@ export function createExports(manifest: SSRManifest) {
         // @ts-expect-error astro cloudflare handler type mismatch
         return handle(manifest, app, request, env, ctx);
       },
-    } satisfies ExportedHandler<Env>,
+      async scheduled(
+        _controller: ScheduledController,
+        env: Env,
+        _ctx: ExecutionContext,
+      ) {
+        const id = env.POST_INDEXER.idFromName("singleton");
+        const stub = env.POST_INDEXER.get(id);
+        const result = await stub.startReindex();
+        if (!result.started) {
+          console.log("Scheduled reindex skipped: already running");
+        }
+      },
+    } satisfies ExportedHandler<Env> & {
+      scheduled: ExportedHandlerScheduledHandler<Env>;
+    },
     PostIndexer,
   };
 }

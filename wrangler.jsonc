@@ -55,6 +55,10 @@
       "new_sqlite_classes": ["PostIndexer"],
     },
   ],
+  // Scheduled reindex every 6 hours
+  "triggers": {
+    "crons": ["10 */12 * * *"],
+  },
   // Source maps for better error traces
   "upload_source_maps": true,
   // Secrets (set via `wrangler secret put`):
