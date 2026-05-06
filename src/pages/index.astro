@@ -30,11 +30,10 @@ type ScheduledDraftNode = {
   updatedAt: string;
   scheduledDate: string | null;
   author: { name: string; username: string };
-  tagsV2: Array<{
-    __typename: string;
-    id?: string;
-    name?: string;
-    slug?: string;
+  tags: Array<{
+    id?: string | null;
+    name?: string | null;
+    slug?: string | null;
   }>;
 };
 type ScheduledDraftsResult = {
@@ -727,7 +726,7 @@ const tabs = [
                 author={node.author?.name ?? "Unknown"}
                 username={node.author?.username}
                 date={new Date(node.updatedAt)}
-                tags={normalizeTags(node.tagsV2)}
+                tags={normalizeTags(node.tags)}
               />
               {node.scheduledDate && (
                 <div class="mt-1 ml-4 text-sm text-yellow-400">

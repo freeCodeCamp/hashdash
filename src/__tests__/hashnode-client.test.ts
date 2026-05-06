@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { getClient } from "../lib/hashnode";
+import { getClient, normalizeTags } from "../lib/hashnode";
 
 const hashnodeSrc = readFileSync(
   resolve(__dirname, "../lib/hashnode.ts"),
@@ -11,6 +11,7 @@ const hashnodeSrc = readFileSync(
 const mockEnv = {
   HASHNODE_TOKEN: "test-token-123",
   HASHNODE_HOST: "test.hashnode.dev",
+  HASHNODE_API_URL: "https://gql.example.test/",
 } as unknown as Env;
 
 function mockFetchResponse(data: unknown, ok = true, status = 200) {
@@ -38,6 +39,14 @@ describe("getClient", () => {
     vi.restoreAllMocks();
   });
 
+  it("should throw if HASHNODE_API_URL is missing", () => {
+    const badEnv = {
+      HASHNODE_TOKEN: "x",
+      HASHNODE_HOST: "test.hashnode.dev",
+    } as unknown as Env;
+    expect(() => getClient(badEnv)).toThrow(/HASHNODE_API_URL/);
+  });
+
   it("should send POST to Hashnode GraphQL endpoint", async () => {
     const fetchMock = mockFetchResponse({ data: { result: "ok" } });
     globalThis.fetch = fetchMock;
@@ -47,7 +56,7 @@ describe("getClient", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://gql.hashnode.com/");
+    expect(url).toBe("https://gql.example.test/");
     expect(opts.method).toBe("POST");
   });
 
@@ -152,6 +161,37 @@ describe("getClient", () => {
     expect(querySection).toContain("author");
     expect(querySection).toContain("coverImage");
     expect(querySection).toContain("tags");
+  });
+
+  describe("normalizeTags", () => {
+    it("should return empty array for null input", () => {
+      expect(normalizeTags(null)).toEqual([]);
+    });
+
+    it("should return empty array for undefined input", () => {
+      expect(normalizeTags(undefined)).toEqual([]);
+    });
+
+    it("should map well-formed tags through unchanged", () => {
+      const tags = [
+        { id: "1", name: "JS", slug: "js" },
+        { id: "2", name: "TS", slug: "ts" },
+      ];
+      expect(normalizeTags(tags)).toEqual(tags);
+    });
+
+    it("should drop entries missing id, name, or slug", () => {
+      const tags = [
+        { id: "1", name: "JS", slug: "js" },
+        { id: "2", name: "", slug: "ts" },
+        { id: "", name: "Go", slug: "go" },
+        { id: "3", name: "Py", slug: "" },
+        { id: null, name: "Rust", slug: "rust" },
+      ];
+      expect(normalizeTags(tags)).toEqual([
+        { id: "1", name: "JS", slug: "js" },
+      ]);
+    });
   });
 
   describe("caching", () => {

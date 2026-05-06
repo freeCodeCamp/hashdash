@@ -468,11 +468,10 @@ export class PostIndexer extends DurableObject<Env> {
             updated_at: node.updatedAt as string,
             tags: JSON.stringify(
               normalizeTags(
-                node.tagsV2 as Array<{
-                  __typename: string;
-                  id?: string;
-                  name?: string;
-                  slug?: string;
+                node.tags as Array<{
+                  id?: string | null;
+                  name?: string | null;
+                  slug?: string | null;
                 }>,
               ),
             ),

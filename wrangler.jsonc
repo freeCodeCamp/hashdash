@@ -30,7 +30,8 @@
   "logpush": false,
   // Runtime variables (plaintext)
   "vars": {
-    "HASHNODE_HOST": "freecodecamp.org/news",
+    "HASHNODE_HOST": "fcc.hashnode.dev",
+    "HASHNODE_API_URL": "https://gql-beta.hashnode.com/",
   },
   // D1 databases
   "d1_databases": [

@@ -1,24 +1,36 @@
 export type TagItem = { id: string; name: string; slug: string };
-type TagV2 = { __typename: string; id?: string; name?: string; slug?: string };
+type RawTag = {
+  id?: string | null;
+  name?: string | null;
+  slug?: string | null;
+};
 
-export function normalizeTags(tagsV2: TagV2[] | undefined | null): TagItem[] {
-  if (!tagsV2) return [];
-  return tagsV2
-    .filter((t) => t.__typename === "Tag" && t.id && t.name && t.slug)
-    .map((t) => ({ id: t.id!, name: t.name!, slug: t.slug! }));
+export function normalizeTags(tags: RawTag[] | undefined | null): TagItem[] {
+  if (!tags) return [];
+  return tags
+    .filter((t): t is TagItem => Boolean(t.id && t.name && t.slug))
+    .map(({ id, name, slug }) => ({ id, name, slug }));
 }
 
 const CACHE_TTL = 300; // 5 minutes
+const CACHE_KEY_PREFIX = "https://hashdash.internal/graphql-cache/";
 
 function buildCacheKey(
   query: string,
   variables?: Record<string, unknown>,
 ): string {
   const payload = JSON.stringify({ query, variables });
-  return `https://hashdash.internal/graphql-cache/${encodeURIComponent(payload)}`;
+  return `${CACHE_KEY_PREFIX}${encodeURIComponent(payload)}`;
 }
 
 export function getClient(env: Env) {
+  const endpoint = env.HASHNODE_API_URL;
+  if (!endpoint) {
+    throw new Error(
+      "HASHNODE_API_URL is not configured. Set it in wrangler.jsonc vars.",
+    );
+  }
+
   return {
     async query<T>(
       query: string,
@@ -38,7 +50,7 @@ export function getClient(env: Env) {
         }
       }
 
-      const response = await fetch("https://gql.hashnode.com/", {
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -95,13 +107,10 @@ export const GET_PUBLICATION_DRAFTS = `
               name
               username
             }
-            tagsV2 {
-              __typename
-              ... on Tag {
-                id
-                name
-                slug
-              }
+            tags {
+              id
+              name
+              slug
             }
           }
         }
@@ -129,13 +138,10 @@ export const GET_SUBMITTED_DRAFTS = `
               name
               username
             }
-            tagsV2 {
-              __typename
-              ... on Tag {
-                id
-                name
-                slug
-              }
+            tags {
+              id
+              name
+              slug
             }
           }
         }
@@ -192,13 +198,10 @@ export const GET_SCHEDULED_DRAFTS = `
               name
               username
             }
-            tagsV2 {
-              __typename
-              ... on Tag {
-                id
-                name
-                slug
-              }
+            tags {
+              id
+              name
+              slug
             }
           }
         }
@@ -219,13 +222,10 @@ export const GET_ALL_DRAFTS_PAGE = `
             title
             updatedAt
             author { name username }
-            tagsV2 {
-              __typename
-              ... on Tag {
-                id
-                name
-                slug
-              }
+            tags {
+              id
+              name
+              slug
             }
           }
         }
