@@ -301,7 +301,7 @@ export class PostIndexer extends DurableObject<Env> {
     while (page < PAGES_PER_ALARM && hasNextPage) {
       if (this.state.status !== "running") return;
 
-      const response = await fetchWithRetry("https://gql.hashnode.com/", {
+      const response = await fetchWithRetry(this.env.HASHNODE_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -410,7 +410,7 @@ export class PostIndexer extends DurableObject<Env> {
     while (page < PAGES_PER_ALARM && hasNextPage) {
       if (this.state.status !== "running") return;
 
-      const draftResponse = await fetchWithRetry("https://gql.hashnode.com/", {
+      const draftResponse = await fetchWithRetry(this.env.HASHNODE_API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

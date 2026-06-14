@@ -3,6 +3,11 @@ import type { SSRManifest } from "astro";
 import { App } from "astro/app";
 import { PostIndexer } from "./lib/indexer";
 
+function getIndexer(env: Env): DurableObjectStub<PostIndexer> {
+  const ns = env.POST_INDEXER as unknown as DurableObjectNamespace<PostIndexer>;
+  return ns.get(ns.idFromName("singleton"));
+}
+
 export function createExports(manifest: SSRManifest) {
   const app = new App(manifest);
   return {
@@ -13,16 +18,14 @@ export function createExports(manifest: SSRManifest) {
           url.pathname === "/api/reindex/ws" &&
           request.headers.get("Upgrade") === "websocket"
         ) {
-          const id = env.POST_INDEXER.idFromName("singleton");
-          const stub = env.POST_INDEXER.get(id);
+          const stub = getIndexer(env);
           return stub.fetch(request);
         }
         if (
           url.pathname === "/api/reindex/status" &&
           request.method === "GET"
         ) {
-          const id = env.POST_INDEXER.idFromName("singleton");
-          const stub = env.POST_INDEXER.get(id);
+          const stub = getIndexer(env);
           const state = await stub.getStatus();
           return new Response(JSON.stringify({ status: state.status }), {
             headers: { "Content-Type": "application/json" },
@@ -36,9 +39,7 @@ export function createExports(manifest: SSRManifest) {
         env: Env,
         _ctx: ExecutionContext,
       ) {
-        const id = env.POST_INDEXER.idFromName("singleton");
-        const stub = env.POST_INDEXER.get(id);
-        const result = await stub.startReindex();
+        const result = await getIndexer(env).startReindex();
         if (!result.started) {
           console.log("Scheduled reindex skipped: already running");
         }
